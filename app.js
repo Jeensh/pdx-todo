@@ -601,11 +601,11 @@ function itemsForView(v) {
   const overdue = overdueBefore
     ? all.filter(t => !t.done && t.date !== null && t.date < overdueBefore)
     : [];
-  // 오늘 뷰의 완료함에는 오늘 이전(밀린)에 완료한 것도 포함 — 체크 후 사라지지 않게
+  // 각 기간 뷰의 완료함은 그 기간으로만 한정 (오늘=오늘, 주=이번 주, 달=이번 달)
   let done;
   if (v.type === 'incomplete') done = [];                       // 미완료 뷰: 완료 항목 숨김
-  else if (v.type === 'today') done = all.filter(t => t.done && t.date !== null && t.date <= tk);
-  else done = all.filter(t => t.done && match(t));
+  else if (v.type === 'today') done = all.filter(t => t.done && t.date === tk);
+  else done = all.filter(t => t.done && match(t));               // week/month는 match가 이미 기간 한정
   return { active, done, overdue };
 }
 
