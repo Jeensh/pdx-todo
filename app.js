@@ -669,6 +669,7 @@ function renderSidebar() {
     el.classList.toggle('active', view.type === el.dataset.view));
 
   const wrap = $('groupList');
+  const savedScroll = wrap.scrollTop;      // 재렌더 시 그룹 목록 스크롤 위치 유지
   wrap.innerHTML = '';
   for (const g of data.groups) {
     const cnt = data.todos.filter(t => !t.done && t.groupId === g.id).length;
@@ -679,11 +680,13 @@ function renderSidebar() {
     btn.innerHTML =
       `<span class="group-dot" style="background:${g.color}"></span>` +
       `<span class="g-name"></span>` +
+      `<button class="g-edit" title="이름 변경" tabindex="-1">✎</button>` +
       `<button class="g-del" title="그룹 삭제" tabindex="-1">✕</button>` +
       `<b class="cnt">${cnt || ''}</b>`;
     btn.querySelector('.g-name').textContent = g.name;
     wrap.appendChild(btn);
   }
+  wrap.scrollTop = savedScroll;
 }
 
 function viewTitle() {
@@ -1815,6 +1818,50 @@ function addGroupInline() {
   input.addEventListener('blur', () => finish(true));
 }
 
+// 그룹 이름 인라인 편집 — 그룹 버튼을 입력창으로 치환(중첩 버튼 회피)
+function renameGroupInline(item) {
+  const id = item.dataset.group;
+  const g = groupOf(id);
+  if (!g) return;
+  const input = document.createElement('input');
+  input.className = 'group-input';
+  input.maxLength = 40;
+  input.value = g.name;
+  item.replaceWith(input);
+  input.focus();
+  input.select();
+  let done = false;
+  const finish = save => {
+    if (done) return;
+    done = true;
+    const name = input.value.trim().slice(0, 40);
+    if (save && name && name !== g.name) {
+      g.name = name;
+      persist();
+      afterGroupRename(id);
+    } else {
+      renderSidebar(); // 취소/무변경 → 원래 목록 복원
+    }
+  };
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); finish(true); }
+    else if (e.key === 'Escape') { e.preventDefault(); finish(false); }
+  });
+  input.addEventListener('blur', () => finish(true));
+}
+
+// 그룹 이름이 쓰이는 모든 곳 갱신 (노트 본문은 건드리지 않음)
+function afterGroupRename(id) {
+  const g = groupOf(id);
+  renderSidebar();                 // 사이드바 그룹 이름
+  renderList();                    // 할일 행의 그룹 뱃지 + (그 그룹 보기 중이면) 헤더
+  const sel = $('edGroup');        // 에디터 그룹 드롭다운 옵션 이름
+  if (sel && g) {
+    const opt = Array.from(sel.options).find(o => o.value === id);
+    if (opt) opt.textContent = g.name;
+  }
+}
+
 function deleteGroup(id) {
   const g = groupOf(id);
   if (!g) return;
@@ -1908,9 +1955,11 @@ function bindEvents() {
     }));
 
   $('groupList').addEventListener('click', e => {
+    const editBtn = e.target.closest('.g-edit');
     const del = e.target.closest('.g-del');
     const item = e.target.closest('.nav-item[data-group]');
     if (!item) return;
+    if (editBtn) { renameGroupInline(item); return; }
     if (del) { deleteGroup(item.dataset.group); return; }
     flushPendingEdits();
     view = { type: 'group', groupId: item.dataset.group };

@@ -306,17 +306,21 @@ body.resizing { cursor: col-resize; user-select: none; }
   border-radius: 50%;
   flex-shrink: 0;
 }
-.nav-item .g-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nav-item .g-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nav-item .g-edit,
 .nav-item .g-del {
-  margin-left: 4px;
+  margin-left: 3px;
   border: 0; background: none;
   color: var(--ink-3);
   font-size: 12px;
   padding: 0 3px;
   border-radius: 4px;
   visibility: hidden;
+  flex: none;
 }
+.nav-item:hover .g-edit,
 .nav-item:hover .g-del { visibility: visible; }
+.nav-item .g-edit:hover { color: var(--accent); }
 .nav-item .g-del:hover { color: var(--danger); }
 
 .add-group { color: var(--ink-3); font-size: 12.5px; }
