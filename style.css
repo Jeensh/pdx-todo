@@ -226,6 +226,9 @@ body.resizing { cursor: col-resize; user-select: none; }
   padding: 12px 10px;
   overflow-y: auto;
   background: var(--panel);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 
 .nav-item {
@@ -254,13 +257,48 @@ body.resizing { cursor: col-resize; user-select: none; }
 .nav-item.active .cnt { color: var(--accent); }
 
 .side-sep {
-  margin: 16px 10px 6px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: calc(100% - 20px);
+  margin: 14px 10px 4px;
+  padding: 11px 3px 0;
+  border: 0;
+  border-top: 1px solid var(--line);
+  background: transparent;
+  font-family: inherit;
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.08em;
   color: var(--ink-3);
-  border-top: 1px solid var(--line);
-  padding-top: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+.side-sep:hover { color: var(--ink-2); }
+.sep-caret {
+  display: inline-block;
+  font-size: 8px;
+  opacity: 0.8;
+  transition: transform 0.15s ease;
+}
+.nav-section:not(.collapsed) .sep-caret { transform: rotate(90deg); }
+.nav-section.collapsed > .sec-body { display: none; }
+
+/* 섹션은 기본 자연 높이. 그룹 섹션만 남은 공간을 채우고,
+   목록이 넘치면 상단 내비는 고정된 채 그룹 목록만 자체 스크롤 */
+.nav-section { flex: 0 0 auto; }
+.nav-section.group { display: flex; flex-direction: column; }
+.nav-section.group:not(.collapsed) { flex: 1 1 auto; min-height: 0; }
+.nav-section.group:not(.collapsed) > .sec-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.nav-section.group #groupList {
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .group-dot {

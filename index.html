@@ -58,21 +58,39 @@
     <button class="nav-item" data-view="calendar"><span class="nav-ico">▦</span>달력</button>
 
     <!-- 2) Todo -->
-    <div class="side-sep"><span>Todo</span></div>
-    <button class="nav-item" data-view="today"><span class="nav-ico">☀</span>오늘<b class="cnt" id="cntToday"></b></button>
-    <button class="nav-item" data-view="week"><span class="nav-ico">▤</span>이번 주<b class="cnt" id="cntWeek"></b></button>
-    <button class="nav-item" data-view="month"><span class="nav-ico">▥</span>이번 달<b class="cnt" id="cntMonth"></b></button>
+    <div class="nav-section" data-section="todo">
+      <button class="side-sep sep-toggle" type="button" aria-expanded="true">
+        <span class="sep-caret" aria-hidden="true">▸</span><span class="sep-label">Todo</span>
+      </button>
+      <div class="sec-body">
+        <button class="nav-item" data-view="today"><span class="nav-ico">☀</span>오늘<b class="cnt" id="cntToday"></b></button>
+        <button class="nav-item" data-view="week"><span class="nav-ico">▤</span>이번 주<b class="cnt" id="cntWeek"></b></button>
+        <button class="nav-item" data-view="month"><span class="nav-ico">▥</span>이번 달<b class="cnt" id="cntMonth"></b></button>
+      </div>
+    </div>
 
-    <!-- 3) 상태별 분류 -->
-    <div class="side-sep"><span>상태별 분류</span></div>
-    <button class="nav-item" data-view="all"><span class="nav-ico">≡</span>전체<b class="cnt" id="cntAll"></b></button>
-    <button class="nav-item" data-view="incomplete"><span class="nav-ico">◻</span>미완료<b class="cnt" id="cntIncomplete"></b></button>
-    <button class="nav-item" data-view="done"><span class="nav-ico">✓</span>완료됨<b class="cnt" id="cntDone"></b></button>
+    <!-- 3) 상태별 분류 (기본 접힘) -->
+    <div class="nav-section collapsed" data-section="status">
+      <button class="side-sep sep-toggle" type="button" aria-expanded="false">
+        <span class="sep-caret" aria-hidden="true">▸</span><span class="sep-label">상태별 분류</span>
+      </button>
+      <div class="sec-body">
+        <button class="nav-item" data-view="all"><span class="nav-ico">≡</span>전체<b class="cnt" id="cntAll"></b></button>
+        <button class="nav-item" data-view="incomplete"><span class="nav-ico">◻</span>미완료<b class="cnt" id="cntIncomplete"></b></button>
+        <button class="nav-item" data-view="done"><span class="nav-ico">✓</span>완료됨<b class="cnt" id="cntDone"></b></button>
+      </div>
+    </div>
 
     <!-- 4) 그룹 -->
-    <div class="side-sep"><span>그룹</span></div>
-    <div id="groupList"></div>
-    <button id="btnAddGroup" class="nav-item add-group" type="button">＋ 새 그룹</button>
+    <div class="nav-section group" data-section="group">
+      <button class="side-sep sep-toggle" type="button" aria-expanded="true">
+        <span class="sep-caret" aria-hidden="true">▸</span><span class="sep-label">그룹</span>
+      </button>
+      <div class="sec-body">
+        <div id="groupList"></div>
+        <button id="btnAddGroup" class="nav-item add-group" type="button">＋ 새 그룹</button>
+      </div>
+    </div>
   </nav>
 
   <!-- ══════════ 할일 리스트 ══════════ -->

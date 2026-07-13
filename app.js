@@ -1867,6 +1867,33 @@ function showCtxMenu(x, y, id) {
 }
 function hideCtxMenu() { $('ctxMenu').hidden = true; ctxTargetId = null; }
 
+/* ============ 사이드바 섹션 접기 ============ */
+
+function applyNavCollapsed(sec, collapsed) {
+  sec.classList.toggle('collapsed', collapsed);
+  const btn = sec.querySelector('.sep-toggle');
+  if (btn) btn.setAttribute('aria-expanded', String(!collapsed));
+}
+
+function loadNavCollapsed() {
+  let saved = {};
+  try { saved = JSON.parse(localStorage.getItem('navCollapsed') || '{}') || {}; } catch (e) {}
+  document.querySelectorAll('.nav-section[data-section]').forEach(sec => {
+    const k = sec.dataset.section;
+    // 저장값 우선, 없으면 기본값(상태별 분류만 접힘)
+    const collapsed = (k in saved) ? !!saved[k] : (k === 'status');
+    applyNavCollapsed(sec, collapsed);
+  });
+}
+
+function saveNavCollapsed() {
+  const out = {};
+  document.querySelectorAll('.nav-section[data-section]').forEach(sec => {
+    out[sec.dataset.section] = sec.classList.contains('collapsed');
+  });
+  try { localStorage.setItem('navCollapsed', JSON.stringify(out)); } catch (e) {}
+}
+
 /* ===================== 이벤트 ===================== */
 
 function bindEvents() {
@@ -1892,6 +1919,14 @@ function bindEvents() {
   });
 
   $('btnAddGroup').addEventListener('click', addGroupInline);
+
+  // 섹션 헤더 클릭 → 접기/펼치기 (상태는 이 기기에만 저장)
+  document.querySelectorAll('.nav-section .sep-toggle').forEach(btn =>
+    btn.addEventListener('click', () => {
+      const sec = btn.closest('.nav-section');
+      applyNavCollapsed(sec, !sec.classList.contains('collapsed'));
+      saveNavCollapsed();
+    }));
 
   // 상단 제목 클릭 → 이름 설정
   $('brandTitle').addEventListener('click', editBrandName);
@@ -2298,6 +2333,7 @@ function bindEvents() {
 async function init() {
   data = indexToData(null); // 폴더 로드 전 임시 빈 상태 (기본 그룹 포함)
   bindEvents();
+  loadNavCollapsed();   // 섹션 접힘 상태 적용 (기본: 상태별 분류 접힘)
   renderAll();          // 빈 화면(게이트가 위에 덮음)
   await initStorage();  // 폴더 연결/로드 (게이트 처리 포함)
 
