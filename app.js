@@ -929,11 +929,15 @@ function escapeText(s) {
    성능: 본문 순수텍스트(태그·base64 제외)를 캐시하고 할일 수정 시에만 재계산.
    검색 자체는 캐시된 소문자 문자열 indexOf 대조라 문서가 많아도 빠르다. */
 
-const _stripEl = document.createElement('div');
+// <template>은 비활성(browsing context 없는) 문서 소속이라 innerHTML에 담긴
+// <img src="images/..">·<img src="http..">가 실제 리소스를 로드(GET)하지 않는다.
+// (일반 div는 현재 문서 소속이라 prewarm/검색이 모든 노트를 훑을 때 이미지마다
+//  서버로 GET을 날려 404 로그가 대량으로 쌓였다.)
+const _stripEl = document.createElement('template');
 function notePlainText(html) {
   _stripEl.innerHTML = html || '';
   // textContent는 속성(img src의 base64 등)을 포함하지 않아 안전·경량
-  return _stripEl.textContent.replace(/\s+/g, ' ').trim();
+  return _stripEl.content.textContent.replace(/\s+/g, ' ').trim();
 }
 
 // 캐시 조회(동기) — 없으면 제목만 있는 임시 항목 (본문은 ensureBodyCache가 채움)
