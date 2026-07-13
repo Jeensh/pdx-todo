@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TODO 메모장</title>
+<link rel="icon" type="image/png" href="icon.png">
+<link rel="apple-touch-icon" href="icon.png">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#ffffff">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <img class="logo" src="icon.png" alt="" aria-hidden="true">
+    <h1 id="brandTitle" title="클릭해서 이름 설정">TODO 메모장</h1>
+  </div>
+  <div class="search-box">
+    <span class="search-ico" aria-hidden="true">🔍</span>
+    <input id="searchInput" type="search" placeholder="검색 (여러 조각은 and 로 연결)" autocomplete="off" aria-label="검색">
+    <select id="searchScope" aria-label="검색 범위">
+      <option value="all">전체</option>
+      <option value="title">제목만</option>
+      <option value="body">본문만</option>
+    </select>
+    <button id="searchClear" class="search-clear" type="button" title="검색 지우기" hidden>✕</button>
+  </div>
+  <div class="top-actions">
+    <span id="saveState" class="save-state"></span>
+    <button id="btnSave" class="top-btn" type="button" title="지금 저장 (Ctrl+S)">저장</button>
+    <button id="btnFile" class="top-btn" type="button" hidden>폴더 연결</button>
+  </div>
+</header>
+
+<!-- 우클릭 컨텍스트 메뉴 -->
+<div id="ctxMenu" class="ctx-menu" hidden>
+  <button data-act="copyLink" type="button">🔗 링크 복사</button>
+  <button data-act="delete" type="button" class="danger">삭제</button>
+</div>
+
+<!-- 첫 실행: 폴더 선택 게이트 -->
+<div class="folder-gate" id="folderGate" hidden>
+  <div class="gate-card">
+    <div class="gate-logo">📁</div>
+    <h2 class="gate-title">메모 폴더 연결</h2>
+    <p class="gate-msg" id="gateMsg"></p>
+    <button id="gateBtn" class="gate-btn" type="button">폴더 선택</button>
+  </div>
+</div>
+
+<div class="layout">
+
+  <!-- ══════════ 사이드바 ══════════ -->
+  <nav class="sidebar" aria-label="보기 선택">
+    <button class="nav-item" data-view="today"><span class="nav-ico">☀</span>오늘<b class="cnt" id="cntToday"></b></button>
+    <button class="nav-item" data-view="week"><span class="nav-ico">▤</span>이번 주<b class="cnt" id="cntWeek"></b></button>
+    <button class="nav-item" data-view="month"><span class="nav-ico">▥</span>이번 달<b class="cnt" id="cntMonth"></b></button>
+    <button class="nav-item" data-view="calendar"><span class="nav-ico">▦</span>달력</button>
+    <button class="nav-item" data-view="incomplete"><span class="nav-ico">◻</span>미완료<b class="cnt" id="cntIncomplete"></b></button>
+    <button class="nav-item" data-view="all"><span class="nav-ico">≡</span>전체<b class="cnt" id="cntAll"></b></button>
+    <button class="nav-item" data-view="done"><span class="nav-ico">✓</span>완료됨<b class="cnt" id="cntDone"></b></button>
+
+    <div class="side-sep"><span>그룹</span></div>
+    <div id="groupList"></div>
+    <button id="btnAddGroup" class="nav-item add-group" type="button">＋ 새 그룹</button>
+  </nav>
+
+  <!-- ══════════ 할일 리스트 ══════════ -->
+  <main class="list-pane">
+    <div class="list-head">
+      <h2 id="viewTitle">오늘</h2>
+      <span id="viewSub" class="view-sub"></span>
+    </div>
+    <div class="quick-add">
+      <input id="quickInput" type="text" placeholder="할 일 입력 후 Enter" autocomplete="off" maxlength="300">
+    </div>
+    <div id="todoList" class="todo-list"></div>
+  </main>
+
+  <!-- 리스트/에디터 크기 조절 핸들 -->
+  <div class="pane-resizer" id="paneResizer" title="드래그해서 크기 조절"></div>
+
+  <!-- ══════════ 에디터 패널 ══════════ -->
+  <aside class="editor-pane" id="editorPane">
+    <div id="editorEmpty" class="editor-empty">
+      <p>왼쪽에서 할 일을 선택하면<br>메모를 작성할 수 있어요</p>
+      <p class="empty-hint">이미지는 붙여넣기(Ctrl+V)나 드래그로,<br>표는 툴바에서 삽입</p>
+    </div>
+
+    <div id="editorBody" class="editor-body" hidden>
+      <div class="ed-meta">
+        <label class="ed-check"><input type="checkbox" id="edDone"></label>
+        <input id="edTitle" class="ed-title" type="text" placeholder="제목" maxlength="300">
+      </div>
+      <div class="ed-meta2">
+        <select id="edGroup" aria-label="그룹"></select>
+        <input id="edDate" type="date" aria-label="예정일">
+        <span class="ed-gap"></span>
+        <button id="edCopyLink" class="ed-act" type="button" title="이 할 일의 링크를 복사 (다른 메모에 붙여넣기)">🔗 링크 복사</button>
+        <button id="edDelete" class="ed-del" type="button">삭제</button>
+      </div>
+
+      <div class="ed-toolbar" id="edToolbar">
+        <button data-cmd="bold" title="굵게 (Ctrl+B)"><b>B</b></button>
+        <button data-cmd="italic" title="기울임 (Ctrl+I)"><i>I</i></button>
+        <button data-cmd="underline" title="밑줄 (Ctrl+U)"><u>U</u></button>
+        <button data-cmd="strikeThrough" title="취소선"><s>S</s></button>
+        <span class="tb-sep"></span>
+        <button data-cmd="h" title="소제목">H</button>
+        <button data-cmd="insertUnorderedList" title="글머리 목록">•≡</button>
+        <button data-cmd="insertOrderedList" title="번호 목록">1≡</button>
+        <button data-cmd="insertHorizontalRule" title="구분선">—</button>
+        <span class="tb-sep"></span>
+        <button data-cmd="table" title="표 삽입">⊞ 표</button>
+        <button data-cmd="image" title="이미지 삽입">🖼 이미지</button>
+        <button data-cmd="link" title="링크 삽입 (할일·문서·웹)">🔗 링크</button>
+        <input id="imgFile" type="file" accept="image/*" multiple hidden>
+      </div>
+
+      <div id="edNote" class="ed-note" contenteditable="true"
+           data-placeholder="메모 — 서식, 이미지 붙여넣기, 표 사용 가능"></div>
+    </div>
+
+    <!-- 표 편집 플로팅 바 -->
+    <div id="tableBar" class="table-bar" hidden>
+      <button data-t="rowAdd" title="아래 행 추가">＋행</button>
+      <button data-t="colAdd" title="오른쪽 열 추가">＋열</button>
+      <button data-t="rowDel" title="현재 행/선택 행 삭제">−행</button>
+      <button data-t="colDel" title="현재 열/선택 열 삭제">−열</button>
+      <span class="tb-div"></span>
+      <button data-t="merge" title="선택 영역 병합">병합</button>
+      <button data-t="split" title="병합 해제">해제</button>
+      <span class="tb-div"></span>
+      <span class="tb-palette" title="셀 배경색">
+        <button class="hl-swatch hl-none" data-hl="" title="없음"></button>
+        <button class="hl-swatch hl-yellow" data-hl="yellow" title="노랑"></button>
+        <button class="hl-swatch hl-green" data-hl="green" title="초록"></button>
+        <button class="hl-swatch hl-blue" data-hl="blue" title="파랑"></button>
+        <button class="hl-swatch hl-pink" data-hl="pink" title="분홍"></button>
+        <button class="hl-swatch hl-gray" data-hl="gray" title="회색"></button>
+      </span>
+      <span class="tb-div"></span>
+      <button data-t="tblDel" class="danger" title="표 삭제">표 삭제</button>
+    </div>
+  </aside>
+</div>
+
+<!-- 확인 모달 -->
+<div class="modal-backdrop" id="confirmModal" hidden>
+  <div class="modal-card" role="dialog" aria-modal="true">
+    <p id="confirmMsg" class="confirm-msg"></p>
+    <div class="modal-btns">
+      <span class="btn-gap"></span>
+      <button id="confirmCancel" class="btn ghost" type="button">취소</button>
+      <button id="confirmOk" class="btn primary" type="button">확인</button>
+    </div>
+  </div>
+</div>
+
+<!-- 링크 삽입 모달 -->
+<div class="modal-backdrop" id="linkModal" hidden>
+  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="linkTitle">
+    <h3 id="linkTitle" class="modal-title">링크 삽입</h3>
+    <div class="link-modes">
+      <label><input type="radio" name="linkMode" value="todo" checked> 할일 연결</label>
+      <label><input type="radio" name="linkMode" value="url"> 문서·웹 주소</label>
+    </div>
+    <div id="linkTodoWrap" class="link-field">
+      <select id="linkTodo" aria-label="연결할 할일"></select>
+    </div>
+    <div id="linkUrlWrap" class="link-field" hidden>
+      <input id="linkUrl" type="text" placeholder="http://...  또는  \\서버\공유\문서.docx">
+      <label class="link-textlbl">표시 텍스트
+        <input id="linkText" type="text" placeholder="비우면 주소 그대로 표시">
+      </label>
+    </div>
+    <div class="modal-btns">
+      <span class="btn-gap"></span>
+      <button id="linkCancel" class="btn ghost" type="button">취소</button>
+      <button id="linkInsert" class="btn primary" type="button">삽입</button>
+    </div>
+  </div>
+</div>
+
+<div id="toastWrap" aria-live="polite"></div>
+
+<script src="app.js" defer></script>
+</body>
+</html>
