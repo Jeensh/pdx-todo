@@ -47,6 +47,7 @@ let calY = new Date().getFullYear();
 let calM = new Date().getMonth();
 let dirty = false;      // 저장 대기 중인 편집이 있는가 (창 닫기 경고용)
 let lastEditorNoteId = null;
+let composing = false;  // IME(한글 등) 조합 중 여부 — 조합 중엔 저장/DOM 정리를 미룸
 
 // 메모 간 이동 히스토리 (뒤로/앞으로) + 최근 본 메모 (세션 단위)
 let navHist = [];       // 방문한 메모 id들 (브라우저 히스토리처럼)
@@ -1314,6 +1315,35 @@ function refreshTodoLinks(note) {
   });
 }
 
+// 줄 맨 앞의 #(1~3개) 뒤에 스페이스 → 그 줄을 헤딩(h1~h3)으로. (마크다운식, 3단계까지)
+function applyMarkdownHeading() {
+  const sel = window.getSelection();
+  if (!sel.rangeCount || !sel.isCollapsed) return false;
+  const range = sel.getRangeAt(0);
+  const node = range.startContainer;
+  if (node.nodeType !== 3) return false;                 // 텍스트 노드 안에서만
+  const before = node.textContent.slice(0, range.startOffset);
+  const m = before.match(/^(#{1,3})$/);                  // 캐럿 앞이 정확히 #~### 뿐
+  if (!m) return false;
+  for (let p = node.previousSibling; p; p = p.previousSibling) {
+    if ((p.textContent || '').length) return false;      // 줄(블록) 맨 앞이어야 함
+  }
+  const level = m[1].length;
+  // 1) 먼저 그 줄을 헤딩으로 (내용에 '#'이 있는 상태라 formatBlock이 확실히 동작)
+  document.execCommand('formatBlock', false, '<h' + level + '>');
+  // 2) 헤딩 안 앞쪽 '#'들을 "선택 후 삭제" → 빈 헤딩 안에 캐럿이 유지됨
+  const r2 = sel.getRangeAt(0);
+  const n2 = r2.startContainer;
+  if (n2.nodeType === 3 && /^#{1,3}$/.test(n2.textContent.slice(0, r2.startOffset))) {
+    const del = document.createRange();
+    del.setStart(n2, 0);
+    del.setEnd(n2, r2.startOffset);
+    sel.removeAllRanges(); sel.addRange(del);
+    document.execCommand('delete');
+  }
+  return true;
+}
+
 // contenteditable가 비었으면(잔여 <br> 포함) placeholder가 다시 뜨도록 완전히 비움
 function normalizeEmptyNote() {
   const n = $('edNote');
@@ -1322,6 +1352,7 @@ function normalizeEmptyNote() {
 }
 
 const saveNote = debounce(() => {
+  if (composing) return; // 한글 조합 중엔 DOM을 건드리지 않는다 (compositionend에서 다시 저장)
   const t = data.todos.find(x => x.id === selectedId);
   if (!t || !t.noteLoaded) return;
   normalizeEmptyNote();
@@ -2310,7 +2341,15 @@ function bindEvents() {
 
   // 에디터 본문
   const note = $('edNote');
-  note.addEventListener('input', () => { dirty = true; clearCellSel(); saveNote(); });
+  // IME 조합(한글 등) 중엔 저장/DOM 정리를 미룬다 — 조합·백스페이스 삭제가 깨지는 것 방지
+  note.addEventListener('compositionstart', () => { composing = true; });
+  note.addEventListener('compositionend', () => { composing = false; dirty = true; clearCellSel(); saveNote(); });
+  note.addEventListener('input', () => {
+    dirty = true;
+    if (composing) return;
+    clearCellSel();
+    saveNote();
+  });
   note.addEventListener('blur', () => { if (dirty) flushPendingEdits(); });
 
   note.addEventListener('paste', e => {
@@ -2373,6 +2412,20 @@ function bindEvents() {
     }
   });
   note.addEventListener('keydown', e => {
+    // 서식 단축키: Ctrl/⌘ + B(굵게)/I(기울임)/U(밑줄)
+    if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey) {
+      const k = e.key.toLowerCase();
+      if (k === 'b' || k === 'i' || k === 'u') {
+        e.preventDefault();
+        document.execCommand(k === 'b' ? 'bold' : k === 'i' ? 'italic' : 'underline');
+        saveNote();
+        return;
+      }
+    }
+    // 줄 앞 #~### + 스페이스 → 헤딩
+    if (e.key === ' ' && !e.isComposing && !composing && applyMarkdownHeading()) {
+      e.preventDefault(); saveNote(); return;
+    }
     if ((e.key === 'Delete' || e.key === 'Backspace')) {
       // 클릭으로 선택된 이미지가 있고, 현재 선택이 실제로 그 이미지일 때만 삭제
       const img = note.querySelector('img.img-selected');
