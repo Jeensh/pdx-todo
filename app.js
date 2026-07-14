@@ -48,6 +48,12 @@ let calM = new Date().getMonth();
 let dirty = false;      // 저장 대기 중인 편집이 있는가 (창 닫기 경고용)
 let lastEditorNoteId = null;
 
+// 메모 간 이동 히스토리 (뒤로/앞으로) + 최근 본 메모 (세션 단위)
+let navHist = [];       // 방문한 메모 id들 (브라우저 히스토리처럼)
+let navPos = -1;        // navHist에서 현재 위치
+const RECENT_MAX = 8;   // 최근 본 메모 최대 개수
+let recentIds = [];     // 최근 방문 순 (앞이 최신)
+
 // 검색 상태
 let search = {
   q: '',
@@ -643,6 +649,7 @@ function renderAll() {
   renderSidebar();
   renderList();
   renderEditor();
+  renderNavButtons();
 }
 
 function renderBrand() {
@@ -709,6 +716,8 @@ function renderSidebar() {
     wrap.appendChild(btn);
   }
   wrap.scrollTop = savedScroll;
+
+  renderRecent();
 }
 
 function viewTitle() {
@@ -1817,6 +1826,11 @@ function deleteTodo(id) {
     const hadNote = t.hasNote;
     data.todos = data.todos.filter(x => x.id !== id);
     if (selectedId === id) selectedId = null;
+    // 히스토리·최근 목록에서 삭제된 메모 제거 (navPos는 현재 위치 유지하도록 보정)
+    const keptBefore = navHist.slice(0, navPos + 1).filter(x => x !== id).length;
+    navHist = navHist.filter(x => x !== id);
+    navPos = Math.min(keptBefore - 1, navHist.length - 1);
+    recentIds = recentIds.filter(x => x !== id);
     searchCache.delete(id);
     deleteNoteFile(id, hadNote);
     persist();
@@ -1825,11 +1839,62 @@ function deleteTodo(id) {
   }, '삭제');
 }
 
-function selectTodo(id) {
+function selectTodo(id, viaHistory) {
   if (selectedId === id) return;
   flushPendingEdits();
   selectedId = id;
+  markVisited(id, viaHistory);
   renderAll();
+}
+
+// 메모 방문 기록: 최근 목록 갱신 + (뒤로/앞으로가 아닌 실제 이동이면) 히스토리에 push
+function markVisited(id, viaHistory) {
+  recentIds = [id, ...recentIds.filter(x => x !== id)].slice(0, RECENT_MAX);
+  if (!viaHistory && navHist[navPos] !== id) {
+    navHist = navHist.slice(0, navPos + 1); // 앞으로 기록은 잘라내고
+    navHist.push(id);
+    navPos = navHist.length - 1;
+  }
+}
+
+function navBack() {
+  if (navPos <= 0) return;
+  navPos--;
+  selectTodo(navHist[navPos], true);
+}
+function navForward() {
+  if (navPos >= navHist.length - 1) return;
+  navPos++;
+  selectTodo(navHist[navPos], true);
+}
+
+function renderNavButtons() {
+  const b = $('navBack'), f = $('navFwd');
+  if (b) b.disabled = navPos <= 0;
+  if (f) f.disabled = navPos >= navHist.length - 1;
+}
+
+// 사이드바 "최근 본 메모" 목록 (삭제된 메모는 제외, 비어있으면 섹션 숨김)
+function renderRecent() {
+  const sec = document.querySelector('.nav-section[data-section="recent"]');
+  const wrap = $('recentList');
+  if (!sec || !wrap) return;
+  const items = recentIds.map(id => data.todos.find(t => t.id === id)).filter(Boolean);
+  sec.hidden = items.length === 0;
+  wrap.innerHTML = '';
+  for (const t of items) {
+    const g = groupOf(t.groupId);
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'nav-item recent-item' + (t.id === selectedId ? ' active' : '');
+    btn.dataset.recent = t.id;
+    btn.innerHTML =
+      (g ? `<span class="group-dot" style="background:${g.color}"></span>`
+         : `<span class="nav-ico">▪</span>`) +
+      `<span class="g-name"></span>`;
+    btn.querySelector('.g-name').textContent = t.title || '(제목 없음)';
+    wrap.appendChild(btn);
+  }
 }
 
 function addGroupInline() {
@@ -2017,6 +2082,22 @@ function bindEvents() {
       applyNavCollapsed(sec, !sec.classList.contains('collapsed'));
       saveNavCollapsed();
     }));
+
+  // 최근 본 메모 클릭 → 이동
+  $('recentList').addEventListener('click', e => {
+    const item = e.target.closest('.recent-item[data-recent]');
+    if (item) selectTodo(item.dataset.recent);
+  });
+
+  // 뒤로/앞으로 (에디터 상단 버튼)
+  $('navBack').addEventListener('click', navBack);
+  $('navFwd').addEventListener('click', navForward);
+  // Alt+←/→ 로도 이동 (갈 곳이 있을 때만 기본 동작 가로챔)
+  document.addEventListener('keydown', e => {
+    if (!e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+    if (e.key === 'ArrowLeft' && navPos > 0) { e.preventDefault(); navBack(); }
+    else if (e.key === 'ArrowRight' && navPos < navHist.length - 1) { e.preventDefault(); navForward(); }
+  });
 
   // 상단 제목 클릭 → 이름 설정
   $('brandTitle').addEventListener('click', editBrandName);

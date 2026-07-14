@@ -683,6 +683,19 @@ body.resizing { cursor: col-resize; user-select: none; }
   gap: 10px;
   padding: 18px 22px 0;
 }
+.ed-nav { display: flex; gap: 2px; flex: none; }
+.ed-nav-btn {
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--ink-2);
+  width: 26px; height: 26px;
+  border-radius: 7px;
+  font-size: 11px;
+  cursor: pointer;
+  display: grid; place-items: center;
+}
+.ed-nav-btn:hover:not(:disabled) { background: var(--bg); color: var(--accent); border-color: var(--line-2); }
+.ed-nav-btn:disabled { opacity: 0.35; cursor: default; }
 .ed-check input {
   width: 19px; height: 19px;
   accent-color: var(--accent);
