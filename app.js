@@ -1480,6 +1480,20 @@ function insertHTMLAtCaret(html) {
   saveNote();
 }
 
+// 붙여넣은 HTML을 라이브 에디터에 넣기 전 방어:
+// sanitize(외부 img 제거) 후 resolveImages로 images/ 상대참조를 blob으로 치환(파일 없으면 제거).
+// resolveImages는 비활성 DOMParser를 쓰고 FSA로 로컬 파일만 읽으므로 서버 GET을 내지 않는다.
+// → bare한 images/ 참조가 그대로 삽입돼 브라우저가 서버로 GET(404)하는 것을 막는다.
+async function insertPastedHTML(html) {
+  const targetId = selectedId;
+  let safe;
+  try { safe = await resolveImages(sanitizeHTML(html)); }
+  catch (e) { return; } // 실패 시 삽입 안 함(안전) — 어차피 서버 GET은 없음
+  if (selectedId !== targetId || document.activeElement !== $('edNote')) return; // 붙여넣기 도중 이탈
+  document.execCommand('insertHTML', false, safe);
+  saveNote();
+}
+
 /* ---------- 표 ---------- */
 
 function insertTable() {
@@ -2182,8 +2196,7 @@ function bindEvents() {
     // 엑셀/HWP는 표 HTML과 셀 비트맵을 함께 넣음 → 표가 있으면 표를 우선
     if (html && /<table[\s>]/i.test(html)) {
       e.preventDefault();
-      document.execCommand('insertHTML', false, sanitizeHTML(html));
-      saveNote();
+      insertPastedHTML(html);
       return;
     }
     const items = Array.from(e.clipboardData.items || []);
@@ -2195,8 +2208,7 @@ function bindEvents() {
     }
     if (html) {
       e.preventDefault();
-      document.execCommand('insertHTML', false, sanitizeHTML(html));
-      saveNote();
+      insertPastedHTML(html);
     }
     // 일반 텍스트는 기본 동작
   });
