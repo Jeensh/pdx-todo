@@ -51,7 +51,7 @@ let lastEditorNoteId = null;
 // 메모 간 이동 히스토리 (뒤로/앞으로) + 최근 본 메모 (세션 단위)
 let navHist = [];       // 방문한 메모 id들 (브라우저 히스토리처럼)
 let navPos = -1;        // navHist에서 현재 위치
-const RECENT_MAX = 8;   // 최근 본 메모 최대 개수
+const RECENT_MAX = 4;   // 최근 본 메모 최대 개수
 let recentIds = [];     // 최근 방문 순 (앞이 최신)
 
 // 검색 상태
@@ -612,7 +612,8 @@ function itemsForView(v) {
     const now = new Date();
     const prefix = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-`;
     match = t => t.date !== null && t.date.startsWith(prefix);
-  } else if (v.type === 'group') match = t => t.groupId === v.groupId;
+  } else if (v.type === 'date') match = t => t.date === v.date;
+  else if (v.type === 'group') match = t => t.groupId === v.groupId;
   else match = () => true; // all, done, incomplete
 
   const active = all.filter(t => !t.done && match(t));
@@ -721,6 +722,11 @@ function renderSidebar() {
 }
 
 function viewTitle() {
+  if (view.type === 'date') {
+    const [y, m, d] = view.date.split('-').map(Number);
+    const dow = new Date(y, m - 1, d).getDay();
+    return [`${m}월 ${d}일`, `${DOW[dow]}요일` + (view.date === todayKey() ? ' · 오늘' : '')];
+  }
   if (view.type === 'today') return ['오늘', fmtDateShort(todayKey())];
   if (view.type === 'week') return ['이번 주', ''];
   if (view.type === 'month') return ['이번 달', `${new Date().getMonth() + 1}월`];
@@ -738,6 +744,7 @@ function renderList() {
   const [title, sub] = viewTitle();
   $('viewTitle').textContent = title;
   $('viewSub').textContent = sub;
+  $('backToCal').hidden = (view.type !== 'date'); // 날짜 뷰에서만 '달력으로' 표시
   // 완료됨 뷰에서는 새 할일을 추가할 곳이 없으므로 입력창 숨김
   document.querySelector('.quick-add').hidden = (view.type === 'done');
 
@@ -903,6 +910,14 @@ function moveCalMonth(delta) {
 }
 
 // 특정 날짜에 새 할 일 추가 후 편집기 제목에 포커스
+// 달력에서 날짜 셀 클릭 → 그 날짜의 목록 뷰로 이동 (오늘 뷰처럼)
+function openDate(dk) {
+  flushPendingEdits();
+  view = { type: 'date', groupId: null, date: dk };
+  doneOpen = false;
+  renderAll();
+}
+
 function addTodoOnDate(dateKey) {
   flushPendingEdits();
   const t = {
@@ -1796,7 +1811,8 @@ function addTodo(title) {
     title: title.trim().slice(0, 300),
     done: false,
     groupId: view.type === 'group' ? view.groupId : null,
-    date: (view.type === 'today' || view.type === 'week' || view.type === 'month') ? todayKey() : null,
+    date: (view.type === 'today' || view.type === 'week' || view.type === 'month') ? todayKey()
+        : view.type === 'date' ? view.date : null,
     note: '', noteLoaded: true, hasNote: false,
     created: new Date().toISOString(),
     updated: new Date().toISOString(),
@@ -2089,6 +2105,9 @@ function bindEvents() {
     if (item) selectTodo(item.dataset.recent);
   });
 
+  // 날짜 뷰 → 달력으로 돌아가기
+  $('backToCal').addEventListener('click', () => { view = { type: 'calendar', groupId: null }; renderAll(); });
+
   // 뒤로/앞으로 (에디터 상단 버튼)
   $('navBack').addEventListener('click', navBack);
   $('navFwd').addEventListener('click', navForward);
@@ -2184,11 +2203,11 @@ function bindEvents() {
         return;
       }
       const add = e.target.closest('[data-add]');
-      if (add) { addTodoOnDate(add.dataset.add); return; }
+      if (add) { addTodoOnDate(add.dataset.add); return; } // ＋ 버튼 → 그 날 추가
       const chip = e.target.closest('.cal-chip');
       if (chip) { selectTodo(chip.dataset.id); return; }
       const cell = e.target.closest('.cal-cell:not(.empty)');
-      if (cell) { addTodoOnDate(cell.dataset.day); return; } // 빈 칸 클릭 → 그 날 추가
+      if (cell && cell.dataset.day) { openDate(cell.dataset.day); return; } // 셀 클릭 → 그 날짜 목록으로 이동
       return;
     }
     const row = e.target.closest('.todo-row');
