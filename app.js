@@ -33,6 +33,7 @@ function debounce(fn, ms) {
 }
 
 const GROUP_COLORS = ['#3560e0', '#2e8b57', '#c98a04', '#8b5cf6', '#d6558e', '#0e9394'];
+const isNote = t => !!t && t.kind === 'note';  // 정보용 '자료'(완료·날짜 없음) vs 할일
 
 /* ===================== 상태 ===================== */
 
@@ -49,11 +50,9 @@ let dirty = false;      // 저장 대기 중인 편집이 있는가 (창 닫기 
 let lastEditorNoteId = null;
 let composing = false;  // IME(한글 등) 조합 중 여부 — 조합 중엔 저장/DOM 정리를 미룸
 
-// 메모 간 이동 히스토리 (뒤로/앞으로) + 최근 본 메모 (세션 단위)
+// 메모 간 이동 히스토리 (뒤로/앞으로, 세션 단위)
 let navHist = [];       // 방문한 메모 id들 (브라우저 히스토리처럼)
 let navPos = -1;        // navHist에서 현재 위치
-const RECENT_MAX = 4;   // 최근 본 메모 최대 개수
-let recentIds = [];     // 최근 방문 순 (앞이 최신)
 
 // 검색 상태
 let search = {
@@ -272,6 +271,8 @@ function buildIndex() {
     todos: data.todos.map(t => ({
       id: t.id, title: t.title, groupId: t.groupId, date: t.date,
       done: t.done, created: t.created, updated: t.updated, hasNote: !!t.hasNote,
+      kind: t.kind === 'note' ? 'note' : undefined,           // 자료 항목
+      pins: (t.pins && t.pins.length) ? t.pins : undefined,   // 상단 고정 범위들
     })),
   };
 }
@@ -291,6 +292,8 @@ function indexToData(idx) {
         created: typeof t.created === 'string' ? t.created : new Date().toISOString(),
         updated: typeof t.updated === 'string' ? t.updated : new Date().toISOString(),
         hasNote: !!t.hasNote,
+        kind: t.kind === 'note' ? 'note' : undefined,
+        pins: Array.isArray(t.pins) ? t.pins.filter(x => typeof x === 'string') : [],
         note: undefined, noteLoaded: false,
       });
     }
@@ -617,7 +620,7 @@ function itemsForView(v) {
   else if (v.type === 'group') match = t => t.groupId === v.groupId;
   else match = () => true; // all, done, incomplete
 
-  const active = all.filter(t => !t.done && match(t));
+  const active = all.filter(t => !isNote(t) && !t.done && match(t)); // 자료는 할일 목록에서 제외
   // "밀린 할 일" = 현재 기간 시작 이전의 미완료 (기간 내부의 지난 날짜와 중복되지 않게)
   let overdueBefore = null;
   if (v.type === 'today') overdueBefore = tk;
@@ -629,13 +632,13 @@ function itemsForView(v) {
     overdueBefore = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-01`;
   }
   const overdue = overdueBefore
-    ? all.filter(t => !t.done && t.date !== null && t.date < overdueBefore)
+    ? all.filter(t => !isNote(t) && !t.done && t.date !== null && t.date < overdueBefore)
     : [];
   // 각 기간 뷰의 완료함은 그 기간으로만 한정 (오늘=오늘, 주=이번 주, 달=이번 달)
   let done;
   if (v.type === 'incomplete') done = [];                       // 미완료 뷰: 완료 항목 숨김
-  else if (v.type === 'today') done = all.filter(t => t.done && t.date === tk);
-  else done = all.filter(t => t.done && match(t));               // week/month는 match가 이미 기간 한정
+  else if (v.type === 'today') done = all.filter(t => !isNote(t) && t.done && t.date === tk);
+  else done = all.filter(t => !isNote(t) && t.done && match(t)); // week/month는 match가 이미 기간 한정
   return { active, done, overdue };
 }
 
@@ -643,6 +646,28 @@ const byDate = (a, b) =>
   (a.date === null) - (b.date === null) ||
   (a.date || '').localeCompare(b.date || '') ||
   a.created.localeCompare(b.created);
+
+// 상단 고정 범위: 오늘/특정 날짜는 날짜별, 이번주·이번달은 각각 별도. 그 외 뷰는 고정 없음.
+function viewScope() {
+  if (view.type === 'today') return 'date:' + todayKey();
+  if (view.type === 'date') return 'date:' + view.date;
+  if (view.type === 'week') return 'week';
+  if (view.type === 'month') return 'month';
+  return null;
+}
+function isPinned(t, scope) { return !!(scope && t.pins && t.pins.includes(scope)); }
+function togglePin(id) {
+  const scope = viewScope();
+  if (!scope) return;
+  const t = data.todos.find(x => x.id === id);
+  if (!t || isNote(t)) return;
+  flushPendingEdits();
+  t.pins = Array.isArray(t.pins) ? t.pins : [];
+  const i = t.pins.indexOf(scope);
+  if (i >= 0) t.pins.splice(i, 1); else t.pins.push(scope);
+  persist();
+  renderList();
+}
 
 /* ===================== 렌더링 ===================== */
 
@@ -686,7 +711,7 @@ function editBrandName() {
 
 function renderSidebar() {
   const tk = todayKey();
-  const act = data.todos.filter(t => !t.done);
+  const act = data.todos.filter(t => !isNote(t) && !t.done); // 자료 제외
   $('cntToday').textContent = act.filter(t => t.date !== null && t.date <= tk).length || '';
   const { active: wk } = itemsForView({ type: 'week' });
   $('cntWeek').textContent = wk.length || '';
@@ -694,7 +719,8 @@ function renderSidebar() {
   $('cntMonth').textContent = mo.length || '';
   $('cntIncomplete').textContent = act.length || '';
   $('cntAll').textContent = act.length || '';
-  $('cntDone').textContent = data.todos.filter(t => t.done).length || '';
+  $('cntDone').textContent = data.todos.filter(t => !isNote(t) && t.done).length || '';
+  const cn = $('cntNotes'); if (cn) cn.textContent = data.todos.filter(isNote).length || '';
 
   document.querySelectorAll('.nav-item[data-view]').forEach(el =>
     el.classList.toggle('active', view.type === el.dataset.view));
@@ -718,8 +744,6 @@ function renderSidebar() {
     wrap.appendChild(btn);
   }
   wrap.scrollTop = savedScroll;
-
-  renderRecent();
 }
 
 function viewTitle() {
@@ -734,6 +758,7 @@ function viewTitle() {
   if (view.type === 'incomplete') return ['미완료', ''];
   if (view.type === 'all') return ['전체', ''];
   if (view.type === 'done') return ['완료됨', ''];
+  if (view.type === 'notes') return ['자료', '참고용 메모'];
   const g = groupOf(view.groupId);
   return [g ? g.name : '그룹', ''];
 }
@@ -748,8 +773,8 @@ function renderList() {
   $('backToCal').hidden = (view.type !== 'date'); // 날짜 뷰에서만 '달력으로' 표시
   // 완료됨 뷰에서는 새 할일을 추가할 곳이 없으므로 입력창 숨김
   document.querySelector('.quick-add').hidden = (view.type === 'done');
+  $('quickInput').placeholder = view.type === 'notes' ? '자료 제목 입력 후 Enter' : '할 일 입력 후 Enter';
 
-  const { active, done, overdue } = itemsForView(view);
   const list = $('todoList');
   list.innerHTML = '';
   const frag = document.createDocumentFragment();
@@ -762,10 +787,31 @@ function renderList() {
   };
   const addRows = items => items.forEach(t => frag.appendChild(rowEl(t)));
 
+  // 자료 뷰: 정보용 메모만 (완료·날짜 없음)
+  if (view.type === 'notes') {
+    const notes = data.todos.filter(isNote).sort((a, b) => b.updated.localeCompare(a.updated));
+    if (notes.length === 0) frag.appendChild(emptyEl('자료가 없습니다 — 위에 입력해보세요'));
+    else addRows(notes);
+    list.appendChild(frag);
+    return;
+  }
+
+  let { active, done, overdue } = itemsForView(view);
+
   if (view.type === 'done') {
     if (done.length === 0) frag.appendChild(emptyEl('완료된 할 일이 없습니다'));
     addRows(done.sort((a, b) => b.updated.localeCompare(a.updated)));
   } else {
+    // 상단 고정 (현재 뷰 범위에서 고정된 항목을 맨 위로)
+    const scope = viewScope();
+    let pinned = [];
+    if (scope) {
+      const isP = t => isPinned(t, scope);
+      pinned = [...overdue.filter(isP), ...active.filter(isP)];
+      overdue = overdue.filter(t => !isP(t));
+      active = active.filter(t => !isP(t));
+      if (pinned.length) { addSec(`📌 고정 ${pinned.length}`, 'pinned'); addRows(pinned.sort(byDate)); }
+    }
     if (overdue.length > 0) {
       addSec(`밀린 할 일 ${overdue.length}`, 'overdue');
       addRows(overdue.sort(byDate));
@@ -777,7 +823,7 @@ function renderList() {
         if (!byDay.has(t.date)) byDay.set(t.date, []);
         byDay.get(t.date).push(t);
       }
-      if (byDay.size === 0 && overdue.length === 0) {
+      if (byDay.size === 0 && overdue.length === 0 && pinned.length === 0) {
         frag.appendChild(emptyEl(view.type === 'week' ? '이번 주 할 일이 없습니다' : '이번 달 할 일이 없습니다'));
       }
       for (const [dk, items] of byDay) {
@@ -786,20 +832,26 @@ function renderList() {
       }
     } else {
       if (view.type === 'today' && overdue.length > 0 && active.length > 0) addSec('오늘');
-      if (active.length === 0 && overdue.length === 0) {
+      if (active.length === 0 && overdue.length === 0 && pinned.length === 0) {
         frag.appendChild(emptyEl(view.type === 'today' ? '오늘 할 일이 없습니다 — 위에 입력해보세요' : '할 일이 없습니다'));
       }
       addRows(active.sort(byDate));
     }
     // 이 뷰의 완료 항목 (접힘)
     if (done.length > 0) {
-      const t = document.createElement('button');
-      t.type = 'button';
-      t.className = 'done-toggle';
-      t.textContent = `${doneOpen ? '▾' : '▸'} 완료 ${done.length}`;
-      t.addEventListener('click', () => { doneOpen = !doneOpen; renderList(); });
-      frag.appendChild(t);
+      const tbtn = document.createElement('button');
+      tbtn.type = 'button';
+      tbtn.className = 'done-toggle';
+      tbtn.textContent = `${doneOpen ? '▾' : '▸'} 완료 ${done.length}`;
+      tbtn.addEventListener('click', () => { doneOpen = !doneOpen; renderList(); });
+      frag.appendChild(tbtn);
       if (doneOpen) addRows(done.sort((a, b) => b.updated.localeCompare(a.updated)));
+    }
+    // 그룹 뷰: 그 그룹에 속한 자료
+    if (view.type === 'group') {
+      const notes = data.todos.filter(t => isNote(t) && t.groupId === view.groupId)
+        .sort((a, b) => b.updated.localeCompare(a.updated));
+      if (notes.length) { addSec('자료'); addRows(notes); }
     }
   }
   list.appendChild(frag);
@@ -936,8 +988,17 @@ function addTodoOnDate(dateKey) {
 }
 
 function rowEl(t) {
+  const note = isNote(t);
+  const scope = viewScope();
+  const pinnable = !!scope && !note;
+  const pinned = pinnable && isPinned(t, scope);
+
   const row = document.createElement('div');
-  row.className = 'todo-row' + (t.done ? ' done' : '') + (t.id === selectedId ? ' selected' : '');
+  row.className = 'todo-row'
+    + (!note && t.done ? ' done' : '')
+    + (note ? ' note-row' : '')
+    + (pinned ? ' pinned' : '')
+    + (t.id === selectedId ? ' selected' : '');
   row.dataset.id = t.id;
   row.tabIndex = 0; // 키보드 선택 가능
 
@@ -946,21 +1007,23 @@ function rowEl(t) {
   const hasNote = !!t.hasNote;
 
   const metas = [];
-  if (g && !(view.type === 'group')) {
+  if (g && view.type !== 'group') {
     metas.push(`<span class="meta-group"><span class="group-dot" style="background:${g.color}"></span>${escapeText(g.name)}</span>`);
   }
-  if (t.date && view.type !== 'week') {
+  if (!note && t.date && view.type !== 'week') {
     const od = !t.done && t.date < tk;
     metas.push(`<span class="meta-date${od ? ' overdue' : ''}">${fmtDateShort(t.date)}</span>`);
   }
   if (hasNote) metas.push(`<span class="meta-note">📄</span>`);
 
   row.innerHTML =
-    `<button class="todo-check" type="button" title="완료">✓</button>` +
+    (note ? `<span class="note-ico" aria-hidden="true">📎</span>`
+          : `<button class="todo-check" type="button" title="완료">✓</button>`) +
     `<div class="todo-main">` +
       `<div class="todo-title"></div>` +
       (metas.length ? `<div class="todo-meta">${metas.join('')}</div>` : '') +
     `</div>` +
+    (pinnable ? `<button class="row-pin${pinned ? ' on' : ''}" type="button" tabindex="-1" title="${pinned ? '고정 해제' : '상단 고정'}">📌</button>` : '') +
     `<button class="row-del" type="button" title="삭제">✕</button>`;
   row.querySelector('.todo-title').textContent = t.title || '(제목 없음)';
   return row;
@@ -1284,6 +1347,7 @@ function renderEditor() {
     lastEditorNoteId = t.id;
   }
 
+  $('editorBody').classList.toggle('is-note', isNote(t)); // 자료: 완료·날짜 숨김
   $('edDone').checked = t.done;
   $('edTitle').value = t.title;
   $('edDate').value = t.date || '';
@@ -1837,13 +1901,17 @@ function hideTableBar() { $('tableBar').hidden = true; }
 /* ===================== 할일 · 그룹 조작 ===================== */
 
 function addTodo(title) {
+  const note = view.type === 'notes';
   const t = {
     id: uid(),
     title: title.trim().slice(0, 300),
     done: false,
+    kind: note ? 'note' : undefined,
     groupId: view.type === 'group' ? view.groupId : null,
-    date: (view.type === 'today' || view.type === 'week' || view.type === 'month') ? todayKey()
+    date: note ? null
+        : (view.type === 'today' || view.type === 'week' || view.type === 'month') ? todayKey()
         : view.type === 'date' ? view.date : null,
+    pins: [],
     note: '', noteLoaded: true, hasNote: false,
     created: new Date().toISOString(),
     updated: new Date().toISOString(),
@@ -1859,7 +1927,7 @@ function addTodo(title) {
 function toggleDone(id) {
   flushPendingEdits(); // 다른 항목 편집 중 체크 시 편집 내용 보존
   const t = data.todos.find(x => x.id === id);
-  if (!t) return;
+  if (!t || isNote(t)) return; // 자료는 완료 개념 없음
   t.done = !t.done;
   t.updated = new Date().toISOString();
   persist();
@@ -1869,15 +1937,14 @@ function toggleDone(id) {
 function deleteTodo(id) {
   const t = data.todos.find(x => x.id === id);
   if (!t) return;
-  confirmBox(`"${t.title || '(제목 없음)'}" 할 일을 삭제할까요?\n메모 내용도 함께 삭제됩니다.`, () => {
+  confirmBox(`"${t.title || '(제목 없음)'}" ${isNote(t) ? '자료를' : '할 일을'} 삭제할까요?\n메모 내용도 함께 삭제됩니다.`, () => {
     const hadNote = t.hasNote;
     data.todos = data.todos.filter(x => x.id !== id);
     if (selectedId === id) selectedId = null;
-    // 히스토리·최근 목록에서 삭제된 메모 제거 (navPos는 현재 위치 유지하도록 보정)
+    // 히스토리에서 삭제된 메모 제거 (navPos는 현재 위치 유지하도록 보정)
     const keptBefore = navHist.slice(0, navPos + 1).filter(x => x !== id).length;
     navHist = navHist.filter(x => x !== id);
     navPos = Math.min(keptBefore - 1, navHist.length - 1);
-    recentIds = recentIds.filter(x => x !== id);
     searchCache.delete(id);
     deleteNoteFile(id, hadNote);
     persist();
@@ -1894,9 +1961,8 @@ function selectTodo(id, viaHistory) {
   renderAll();
 }
 
-// 메모 방문 기록: 최근 목록 갱신 + (뒤로/앞으로가 아닌 실제 이동이면) 히스토리에 push
+// 메모 방문 기록: 뒤로/앞으로가 아닌 실제 이동이면 히스토리에 push
 function markVisited(id, viaHistory) {
-  recentIds = [id, ...recentIds.filter(x => x !== id)].slice(0, RECENT_MAX);
   if (!viaHistory && navHist[navPos] !== id) {
     navHist = navHist.slice(0, navPos + 1); // 앞으로 기록은 잘라내고
     navHist.push(id);
@@ -1919,29 +1985,6 @@ function renderNavButtons() {
   const b = $('navBack'), f = $('navFwd');
   if (b) b.disabled = navPos <= 0;
   if (f) f.disabled = navPos >= navHist.length - 1;
-}
-
-// 사이드바 "최근 본 메모" 목록 (삭제된 메모는 제외, 비어있으면 섹션 숨김)
-function renderRecent() {
-  const sec = document.querySelector('.nav-section[data-section="recent"]');
-  const wrap = $('recentList');
-  if (!sec || !wrap) return;
-  const items = recentIds.map(id => data.todos.find(t => t.id === id)).filter(Boolean);
-  sec.hidden = items.length === 0;
-  wrap.innerHTML = '';
-  for (const t of items) {
-    const g = groupOf(t.groupId);
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'nav-item recent-item' + (t.id === selectedId ? ' active' : '');
-    btn.dataset.recent = t.id;
-    btn.innerHTML =
-      (g ? `<span class="group-dot" style="background:${g.color}"></span>`
-         : `<span class="nav-ico">▪</span>`) +
-      `<span class="g-name"></span>`;
-    btn.querySelector('.g-name').textContent = t.title || '(제목 없음)';
-    wrap.appendChild(btn);
-  }
 }
 
 function addGroupInline() {
@@ -2130,12 +2173,6 @@ function bindEvents() {
       saveNavCollapsed();
     }));
 
-  // 최근 본 메모 클릭 → 이동
-  $('recentList').addEventListener('click', e => {
-    const item = e.target.closest('.recent-item[data-recent]');
-    if (item) selectTodo(item.dataset.recent);
-  });
-
   // 날짜 뷰 → 달력으로 돌아가기
   $('backToCal').addEventListener('click', () => { view = { type: 'calendar', groupId: null }; renderAll(); });
 
@@ -2243,6 +2280,7 @@ function bindEvents() {
     }
     const row = e.target.closest('.todo-row');
     if (!row) return;
+    if (e.target.closest('.row-pin')) { togglePin(row.dataset.id); return; }
     if (e.target.closest('.todo-check')) { toggleDone(row.dataset.id); return; }
     if (e.target.closest('.row-del')) { deleteTodo(row.dataset.id); return; }
     selectTodo(row.dataset.id);

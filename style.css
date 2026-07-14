@@ -462,6 +462,31 @@ body.resizing { cursor: col-resize; user-select: none; }
 .todo-row:hover .row-del { visibility: visible; }
 .row-del:hover { color: var(--danger); background: rgba(214, 69, 69, 0.08); }
 
+/* 상단 고정 버튼 (📌) — 기본 숨김, 호버 또는 고정됨일 때 표시 */
+.row-pin {
+  border: 0; background: none;
+  font-size: 13px;
+  padding: 2px 5px;
+  border-radius: 6px;
+  visibility: hidden;
+  flex-shrink: 0;
+  filter: grayscale(1) opacity(0.5);
+}
+.todo-row:hover .row-pin { visibility: visible; }
+.row-pin.on { visibility: visible; filter: none; }
+.row-pin:hover { background: var(--accent-soft); }
+.list-sec.pinned { color: var(--accent); }
+
+/* 자료(정보용) 행: 체크박스 대신 📎, 완료 개념 없음 */
+.note-ico {
+  width: 18px; flex-shrink: 0;
+  font-size: 13px; text-align: center;
+  opacity: 0.75;
+}
+/* 자료 편집 시: 완료 체크·예정일 숨김 */
+.editor-body.is-note .ed-check,
+.editor-body.is-note #edDate { display: none; }
+
 .done-toggle {
   margin: 16px 8px 4px;
   border: 0; background: none;
