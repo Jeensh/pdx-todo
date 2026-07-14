@@ -487,6 +487,28 @@ function revokeAllImageUrls() {
   }
 }
 
+// 노트 재방문 시 이미지 재연결: 노트 전환에서 blob URL을 revoke하므로, t.note에
+// 박혀 있던 예전 blob 주소는 무효다. 화면의 각 이미지를 data-ref(images/해시)로
+// (캐시에 없으면 파일에서 다시 만들어) 최신 blob에 연결한다.
+async function rebindNoteImages() {
+  const imgs = Array.from($('edNote').querySelectorAll('img[data-ref]'));
+  for (const img of imgs) {
+    const ref = img.getAttribute('data-ref');
+    if (!IMG_REF_RE.test(ref)) continue;
+    let url = imgUrlCache.get(ref);
+    if (!url) {
+      try {
+        const bytes = await fsReadBytes(ref);
+        const ext = ref.split('.').pop().toLowerCase();
+        const mime = Object.keys(EXT_OF).find(k => EXT_OF[k] === ext) || 'image/png';
+        url = URL.createObjectURL(new Blob([bytes], { type: mime }));
+        imgUrlCache.set(ref, url);
+      } catch (e) { continue; }
+    }
+    if (img.getAttribute('src') !== url) img.setAttribute('src', url);
+  }
+}
+
 async function pickFolder() {
   try {
     const h = await window.showDirectoryPicker({ mode: 'readwrite' });
@@ -1250,6 +1272,7 @@ function renderEditor() {
   if (t.noteLoaded) {
     note.innerHTML = sanitizeHTML(t.note || '');
     refreshTodoLinks(note);
+    rebindNoteImages();  // 재방문 시 revoke된 blob을 data-ref로 다시 연결
     if (view.type === 'search' && search.hlTerms.length) highlightInNote();
   } else {
     // 본문 지연 로딩 — 로드 후 (여전히 선택돼 있으면) 다시 그림
