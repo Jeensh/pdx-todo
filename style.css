@@ -828,6 +828,20 @@ body.resizing { cursor: col-resize; user-select: none; }
 .ed-note ul, .ed-note ol { margin: 6px 0 6px 22px; }
 .ed-note li { margin: 2px 0; }
 .ed-note hr { border: 0; border-top: 1px solid var(--line-2); margin: 14px 0; }
+.ed-note pre {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin: 10px 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "D2Coding", monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--ink);
+  tab-size: 2;
+}
 .ed-note img {
   max-width: 100%;
   border-radius: 8px;

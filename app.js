@@ -1408,6 +1408,58 @@ function applyMarkdownHeading() {
   return true;
 }
 
+// 줄 맨 앞 백틱 3개(```) 뒤에 Enter → 그 줄을 코드블록(<pre>)으로. (마크다운식)
+function applyCodeFence() {
+  const sel = window.getSelection();
+  if (!sel.rangeCount || !sel.isCollapsed) return false;
+  const range = sel.getRangeAt(0);
+  const node = range.startContainer;
+  if (node.nodeType !== 3) return false;
+  if (node.textContent.slice(0, range.startOffset) !== '```') return false; // 줄 앞 ``` 뿐
+  for (let p = node.previousSibling; p; p = p.previousSibling) {
+    if ((p.textContent || '').length) return false;
+  }
+  if (node.parentNode && node.parentNode.closest && node.parentNode.closest('pre')) return false; // 이미 코드블록
+  document.execCommand('formatBlock', false, '<pre>');
+  const r2 = sel.getRangeAt(0);
+  const n2 = r2.startContainer;
+  if (n2.nodeType === 3 && n2.textContent.slice(0, r2.startOffset) === '```') {
+    const del = document.createRange();
+    del.setStart(n2, 0);
+    del.setEnd(n2, r2.startOffset);
+    sel.removeAllRanges(); sel.addRange(del);
+    document.execCommand('delete');
+  }
+  return true;
+}
+
+// 코드블록(<pre>) 안에서 Enter: 보통은 줄바꿈, 빈 줄에서 Enter면 블록 밖으로 탈출
+function handleEnterInPre() {
+  const sel = window.getSelection();
+  if (!sel.rangeCount || !sel.isCollapsed) return false;
+  const range = sel.getRangeAt(0);
+  const el = range.startContainer.nodeType === 1 ? range.startContainer : range.startContainer.parentNode;
+  const pre = el && el.closest ? el.closest('pre') : null;
+  if (!pre || !$('edNote').contains(pre)) return false;
+  // 현재 줄(캐럿 앞/뒤)이 모두 비었으면 → 빈 줄 → 탈출
+  const bR = document.createRange(); bR.selectNodeContents(pre); bR.setEnd(range.startContainer, range.startOffset);
+  const aR = document.createRange(); aR.selectNodeContents(pre); aR.setStart(range.endContainer, range.endOffset);
+  const lineBefore = bR.toString().split('\n').pop();
+  const lineAfter = aR.toString().split('\n')[0];
+  if (lineBefore === '' && lineAfter === '') {
+    const code = pre.textContent.replace(/\n+$/, '');   // 끝의 빈 줄들 정리
+    const p = document.createElement('p');
+    p.appendChild(document.createElement('br'));
+    if (code === '') pre.replaceWith(p);                // 빈 코드블록이면 없앰
+    else { pre.textContent = code; pre.after(p); }
+    const r = document.createRange(); r.setStart(p, 0); r.collapse(true);
+    sel.removeAllRanges(); sel.addRange(r);
+    return true;
+  }
+  document.execCommand('insertLineBreak');              // 코드블록 내 줄바꿈(리터럴 \n, 캐럿 정확)
+  return true;
+}
+
 // contenteditable가 비었으면(잔여 <br> 포함) placeholder가 다시 뜨도록 완전히 비움
 function normalizeEmptyNote() {
   const n = $('edNote');
@@ -2463,6 +2515,10 @@ function bindEvents() {
     // 줄 앞 #~### + 스페이스 → 헤딩
     if (e.key === ' ' && !e.isComposing && !composing && applyMarkdownHeading()) {
       e.preventDefault(); saveNote(); return;
+    }
+    // 줄 앞 ``` + Enter → 코드블록 / 코드블록 안 Enter 처리
+    if (e.key === 'Enter' && !e.isComposing && !composing && !e.shiftKey) {
+      if (applyCodeFence() || handleEnterInPre()) { e.preventDefault(); saveNote(); return; }
     }
     if ((e.key === 'Delete' || e.key === 'Backspace')) {
       // 클릭으로 선택된 이미지가 있고, 현재 선택이 실제로 그 이미지일 때만 삭제
