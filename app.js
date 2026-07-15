@@ -662,6 +662,7 @@ function viewScope() {
   if (view.type === 'week') return 'week:' + mondayKeyOf(view.anchor || todayKey());
   if (view.type === 'month') return 'month:' + monthKeyOf(view.anchor || todayKey());
   if (view.type === 'group') return 'group:' + view.groupId;
+  if (view.type === 'notes') return 'notes';
   return null;
 }
 // 현재 뷰가 '오늘/이번 주/이번 달'(현재 기간)인가
@@ -699,7 +700,7 @@ function togglePin(id) {
   const scope = viewScope();
   if (!scope) return;
   const t = data.todos.find(x => x.id === id);
-  if (!t || isNote(t)) return;
+  if (!t) return;
   flushPendingEdits();
   t.pins = Array.isArray(t.pins) ? t.pins : [];
   const i = t.pins.indexOf(scope);
@@ -843,11 +844,15 @@ function renderList() {
   };
   const addRows = items => items.forEach(t => frag.appendChild(rowEl(t)));
 
-  // 자료 뷰: 정보용 메모만 (완료·날짜 없음)
+  // 자료 뷰: 정보용 메모만 (완료·날짜 없음). 고정된 자료는 맨 위로
   if (view.type === 'notes') {
-    const notes = data.todos.filter(isNote).sort((a, b) => b.updated.localeCompare(a.updated));
-    if (notes.length === 0) frag.appendChild(emptyEl('자료가 없습니다 — 위에 입력해보세요'));
-    else addRows(notes);
+    const scope = viewScope();
+    const all = data.todos.filter(isNote).sort((a, b) => b.updated.localeCompare(a.updated));
+    const pinned = all.filter(t => isPinned(t, scope));
+    const rest = all.filter(t => !isPinned(t, scope));
+    if (all.length === 0) frag.appendChild(emptyEl('자료가 없습니다 — 위에 입력해보세요'));
+    if (pinned.length) { addSec(`📌 고정 ${pinned.length}`, 'pinned'); addRows(pinned); }
+    addRows(rest);
     list.appendChild(frag);
     return;
   }
@@ -1069,7 +1074,8 @@ function addTodoOnDate(dateKey) {
 function rowEl(t) {
   const note = isNote(t);
   const scope = viewScope();
-  const pinnable = !!scope && !note;
+  // 자료 뷰에선 자료가, 그 외(할일/그룹 뷰)에선 할일이 고정 대상
+  const pinnable = !!scope && (view.type === 'notes' ? note : !note);
   const pinned = pinnable && isPinned(t, scope);
 
   const row = document.createElement('div');
