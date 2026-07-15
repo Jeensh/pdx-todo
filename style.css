@@ -755,6 +755,10 @@ body.resizing { cursor: col-resize; user-select: none; }
 .cal-chip.meeting { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
 .cal-chip.meeting:hover { background: rgba(53, 96, 224, 0.16); }
 .chip-time { font-weight: 700; flex-shrink: 0; }
+/* 달력 드래그 선택(휴가 지정) */
+.cal-grid { user-select: none; }
+.cal-cell.cal-selecting { background: var(--accent-soft); box-shadow: inset 0 0 0 2px var(--accent); }
+.btn.danger-text { color: var(--danger); }
 /* 휴가 표시 */
 .cal-cell.vac { background: rgba(214, 133, 20, 0.07); }
 .cal-vac {

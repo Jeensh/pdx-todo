@@ -827,7 +827,6 @@ function renderList() {
   $('backToCal').hidden = true;
   $('periodNav').hidden = true;
   $('periodToday').hidden = true;
-  $('vacToggle').hidden = true;
   if (view.type === 'search') { renderSearch(); return; }
   if (view.type === 'calendar') { renderCalendar(); return; }
   $('todoList').classList.remove('cal-mode');
@@ -840,12 +839,12 @@ function renderList() {
   $('periodNav').hidden = !periodView;
   $('periodToday').hidden = !periodView || isCurrentPeriod();
   $('periodToday').textContent = view.type === 'week' ? '이번 주' : view.type === 'month' ? '이번 달' : '오늘';
-  // 휴가 등록/해제 (오늘·날짜 뷰에서만)
   const dayKey = view.type === 'today' ? todayKey() : view.type === 'date' ? view.date : null;
-  const vac = dayKey && vacationOn(dayKey);
-  $('vacToggle').hidden = !dayKey;
-  $('vacToggle').textContent = vac ? '🏖 휴가 해제' : '🏖 휴가 등록';
-  $('vacToggle').classList.toggle('on', !!vac);
+  // 날짜 뷰가 휴가일이면 부제에 사유 표시(읽기 전용, 등록은 달력에서)
+  if (dayKey) {
+    const vacItem = data.todos.find(t => isVacation(t) && t.date === dayKey);
+    if (vacItem) $('viewSub').textContent = (sub ? sub + ' · ' : '') + '🏖 ' + (vacItem.title || '휴가');
+  }
   // 완료됨 뷰에서는 새 할일을 추가할 곳이 없으므로 입력창 숨김
   document.querySelector('.quick-add').hidden = (view.type === 'done');
   $('quickInput').placeholder = view.type === 'notes' ? '자료 제목 입력 후 Enter' : '할 일 입력 후 Enter';
@@ -1019,7 +1018,8 @@ function renderCalendar() {
     const dayItems = byDay[dk] || [];
     const meetings = dayItems.filter(isMeeting).sort(byTime);
     const todos = dayItems.filter(isTodo).sort((a, b) => a.created.localeCompare(b.created));
-    const isVac = dayItems.some(isVacation);
+    const vacItem = dayItems.find(isVacation);
+    const isVac = !!vacItem;
     const ordered = [...meetings, ...todos]; // 회의 최우선
 
     const cell = document.createElement('div');
@@ -1032,7 +1032,7 @@ function renderCalendar() {
     let html = `<div class="cal-daynum"><span>${d}</span>` +
       `<button class="cal-add" data-add="${dk}" title="이 날 할 일 추가" tabindex="-1">＋</button></div>`;
     html += '<div class="cal-chips">';
-    if (isVac) html += `<span class="cal-vac">🏖 휴가</span>`;
+    if (isVac) html += `<span class="cal-vac">🏖 ${escapeText(vacItem.title || '휴가')}</span>`;
     const MAX = 4;
     ordered.slice(0, MAX).forEach(t => {
       const mtg = isMeeting(t);
@@ -1110,25 +1110,64 @@ function addMeeting(dateKey) {
   $('edTitle').focus();
 }
 
-// 휴가: 하루 등록/해제 (그 날짜의 vacation 항목 토글)
+// 휴가: 날짜별 등록/해제 (사유 포함). 달력에서 여러 날 드래그 선택 후 일괄 처리.
 function vacationOn(dateKey) { return data.todos.some(t => isVacation(t) && t.date === dateKey); }
-function toggleVacation(dateKey) {
-  flushPendingEdits();
+function setVacation(dateKey, reason) {
   const ex = data.todos.find(t => isVacation(t) && t.date === dateKey);
-  if (ex) {
-    data.todos = data.todos.filter(t => t.id !== ex.id);
-    if (selectedId === ex.id) selectedId = null;
-  } else {
-    data.todos.push({
-      id: uid(), title: '휴가', done: false, kind: 'vacation',
-      groupId: null, date: dateKey, pins: [],
-      note: '', noteLoaded: true, hasNote: false,
-      created: new Date().toISOString(), updated: new Date().toISOString(),
-    });
-  }
+  if (ex) { ex.title = reason || '휴가'; ex.updated = new Date().toISOString(); }
+  else data.todos.push({
+    id: uid(), title: reason || '휴가', done: false, kind: 'vacation',
+    groupId: null, date: dateKey, pins: [],
+    note: '', noteLoaded: true, hasNote: false,
+    created: new Date().toISOString(), updated: new Date().toISOString(),
+  });
+}
+function removeVacation(dateKey) {
+  const ex = data.todos.find(t => isVacation(t) && t.date === dateKey);
+  if (ex) { data.todos = data.todos.filter(t => t.id !== ex.id); if (selectedId === ex.id) selectedId = null; }
+}
+// 여러 날 일괄 적용
+function applyVacation(dateKeys, reason, remove) {
+  flushPendingEdits();
+  for (const dk of dateKeys) { if (remove) removeVacation(dk); else setVacation(dk, reason); }
   persist();
   renderAll();
 }
+
+/* ---- 달력 여러 날 드래그 선택 → 휴가 모달 ---- */
+let calSel = null;            // { start, cur, x, y, dragging }
+let suppressCalClick = false; // 드래그 직후 셀 클릭(openDate) 무시
+let vacDays = [];             // 모달이 처리할 날짜들
+let justOpenedVac = false;    // 모달 여는 클릭이 backdrop을 바로 닫는 것 방지
+
+function calRangeDays(a, b) {  // a~b 사이 날짜키 목록(정렬)
+  const [lo, hi] = a <= b ? [a, b] : [b, a];
+  const days = [];
+  for (let d = lo, i = 0; i < 400 && d <= hi; i++, d = shiftDate(d, 1)) days.push(d);
+  return days;
+}
+function highlightCalRange(a, b) {
+  const set = new Set(calRangeDays(a, b));
+  document.querySelectorAll('.cal-cell[data-day]').forEach(c =>
+    c.classList.toggle('cal-selecting', set.has(c.dataset.day)));
+}
+function clearCalHighlight() {
+  document.querySelectorAll('.cal-cell.cal-selecting').forEach(c => c.classList.remove('cal-selecting'));
+}
+function openVacationModal(days) {
+  if (!days.length) return;
+  vacDays = days.slice();
+  const fmt = k => { const [, m, d] = k.split('-').map(Number); return `${m}월 ${d}일`; };
+  $('vacRange').textContent = (days.length === 1 ? fmt(days[0]) : `${fmt(days[0])} – ${fmt(days[days.length - 1])}`) + ` · ${days.length}일`;
+  const existing = days.map(k => data.todos.find(t => isVacation(t) && t.date === k)).find(Boolean);
+  $('vacReason').value = existing ? (existing.title || '휴가') : '연차';
+  $('vacRemove').hidden = !days.some(vacationOn);   // 이미 휴가인 날 있을 때만 '해제'
+  $('vacModal').hidden = false;
+  justOpenedVac = true;
+  requestAnimationFrame(() => { justOpenedVac = false; });
+  $('vacReason').focus(); $('vacReason').select();
+}
+function closeVacationModal() { $('vacModal').hidden = true; vacDays = []; }
 
 function addTodoOnDate(dateKey) {
   flushPendingEdits();
@@ -2473,9 +2512,48 @@ function bindEvents() {
   $('periodPrev').addEventListener('click', () => navPeriod(-1));
   $('periodNext').addEventListener('click', () => navPeriod(1));
   $('periodToday').addEventListener('click', resetPeriod);
-  $('vacToggle').addEventListener('click', () => {
-    const dk = view.type === 'today' ? todayKey() : view.type === 'date' ? view.date : null;
-    if (dk) toggleVacation(dk);
+
+  // 달력에서 여러 날 드래그 선택 → 휴가 모달
+  $('todoList').addEventListener('mousedown', e => {
+    if (view.type !== 'calendar' || e.button !== 0) return;
+    if (e.target.closest('.cal-chip, [data-add], [data-cal]')) return;
+    const cell = e.target.closest('.cal-cell[data-day]');
+    if (!cell) return;
+    calSel = { start: cell.dataset.day, cur: cell.dataset.day, x: e.clientX, y: e.clientY, dragging: false };
+  });
+  document.addEventListener('mousemove', e => {
+    if (!calSel) return;
+    if (!calSel.dragging) {
+      if (Math.abs(e.clientX - calSel.x) + Math.abs(e.clientY - calSel.y) < 5) return;
+      calSel.dragging = true;
+    }
+    const el = document.elementFromPoint(e.clientX, e.clientY);
+    const cell = el && el.closest ? el.closest('.cal-cell[data-day]') : null;
+    if (cell) calSel.cur = cell.dataset.day;
+    highlightCalRange(calSel.start, calSel.cur);
+  });
+  document.addEventListener('mouseup', () => {
+    if (!calSel) return;
+    const s = calSel; calSel = null;
+    clearCalHighlight();
+    if (s.dragging) {
+      // 드래그 직후의 click만 무시 (멀티셀 드래그는 click이 안 나므로 rAF로 자동 해제)
+      suppressCalClick = true;
+      requestAnimationFrame(() => { suppressCalClick = false; });
+      openVacationModal(calRangeDays(s.start, s.cur));
+    }
+  });
+  $('vacApply').addEventListener('click', () => { applyVacation(vacDays, $('vacReason').value.trim(), false); closeVacationModal(); });
+  $('vacRemove').addEventListener('click', () => { applyVacation(vacDays, '', true); closeVacationModal(); });
+  $('vacCancel').addEventListener('click', closeVacationModal);
+  $('vacModal').addEventListener('click', e => {
+    if (e.target !== $('vacModal')) return;
+    if (justOpenedVac) { justOpenedVac = false; return; }
+    closeVacationModal();
+  });
+  $('vacReason').addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); $('vacApply').click(); }
+    else if (e.key === 'Escape') closeVacationModal();
   });
 
   // 뒤로/앞으로 (에디터 상단 버튼)
@@ -2564,6 +2642,7 @@ function bindEvents() {
     }
     // 달력 뷰 상호작용
     if (view.type === 'calendar') {
+      if (suppressCalClick) { suppressCalClick = false; return; } // 드래그 직후 클릭 무시
       const nav = e.target.closest('[data-cal]');
       if (nav) {
         const a = nav.dataset.cal;

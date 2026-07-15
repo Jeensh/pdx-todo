@@ -106,7 +106,6 @@
       </div>
       <h2 id="viewTitle">오늘</h2>
       <span id="viewSub" class="view-sub"></span>
-      <button id="vacToggle" class="vac-toggle" type="button" hidden>🏖 휴가 등록</button>
       <button id="periodToday" class="p-today" type="button" hidden>오늘</button>
     </div>
     <div class="quick-add">
@@ -221,6 +220,23 @@
       <span class="btn-gap"></span>
       <button id="linkCancel" class="btn ghost" type="button">취소</button>
       <button id="linkInsert" class="btn primary" type="button">삽입</button>
+    </div>
+  </div>
+</div>
+
+<!-- 휴가 등록 모달 (달력에서 여러 날 드래그 선택 후) -->
+<div class="modal-backdrop" id="vacModal" hidden>
+  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="vacTitle">
+    <h3 id="vacTitle" class="modal-title">🏖 휴가 등록</h3>
+    <p id="vacRange" class="confirm-msg"></p>
+    <label class="link-textlbl">사유
+      <input id="vacReason" type="text" maxlength="40" placeholder="예: 연차, 반차, 병가">
+    </label>
+    <div class="modal-btns">
+      <button id="vacRemove" class="btn ghost danger-text" type="button">휴가 해제</button>
+      <span class="btn-gap"></span>
+      <button id="vacCancel" class="btn ghost" type="button">취소</button>
+      <button id="vacApply" class="btn primary" type="button">등록</button>
     </div>
   </div>
 </div>
