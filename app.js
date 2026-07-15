@@ -35,6 +35,22 @@ function debounce(fn, ms) {
 const GROUP_COLORS = ['#3560e0', '#2e8b57', '#c98a04', '#8b5cf6', '#d6558e', '#0e9394'];
 const isNote = t => !!t && t.kind === 'note';  // 정보용 '자료'(완료·날짜 없음) vs 할일
 
+// 날짜 이동 헬퍼 (앞뒤 이동용)
+function shiftDate(key, days) {
+  const [y, m, d] = key.split('-').map(Number);
+  return keyOf(new Date(y, m - 1, d + days));
+}
+function shiftMonth(key, months) {           // 항상 그 달 1일로 정규화
+  const [y, m] = key.split('-').map(Number);
+  return keyOf(new Date(y, m - 1 + months, 1));
+}
+function mondayKeyOf(key) {                   // 그 날짜가 속한 주의 월요일
+  const [y, m, d] = key.split('-').map(Number);
+  const dt = new Date(y, m - 1, d);
+  return keyOf(new Date(y, m - 1, d - ((dt.getDay() + 6) % 7)));
+}
+function monthKeyOf(key) { const [y, m] = key.split('-').map(Number); return `${y}-${pad(m)}`; }
+
 /* ===================== 상태 ===================== */
 
 let data = null;        // { groups:[], todos:[], meta:{savedAt} }
@@ -605,32 +621,24 @@ function itemsForView(v) {
   const tk = todayKey();
   const all = data.todos;
   let match;
+  const anchor = v.anchor || tk;             // 주/달 뷰의 기준 날짜 (없으면 오늘)
   if (v.type === 'today') match = t => t.date === tk;
   else if (v.type === 'week') {
-    const now = new Date();
-    const mon = new Date(now.getFullYear(), now.getMonth(), now.getDate() - ((now.getDay() + 6) % 7));
-    const sun = new Date(mon.getFullYear(), mon.getMonth(), mon.getDate() + 6);
-    const a = keyOf(mon), b = keyOf(sun);
+    const a = mondayKeyOf(anchor), b = shiftDate(a, 6);
     match = t => t.date !== null && t.date >= a && t.date <= b;
   } else if (v.type === 'month') {
-    const now = new Date();
-    const prefix = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-`;
+    const prefix = monthKeyOf(anchor) + '-';
     match = t => t.date !== null && t.date.startsWith(prefix);
   } else if (v.type === 'date') match = t => t.date === v.date;
   else if (v.type === 'group') match = t => t.groupId === v.groupId;
   else match = () => true; // all, done, incomplete
 
   const active = all.filter(t => !isNote(t) && !t.done && match(t)); // 자료는 할일 목록에서 제외
-  // "밀린 할 일" = 현재 기간 시작 이전의 미완료 (기간 내부의 지난 날짜와 중복되지 않게)
+  // "밀린 할 일" = 기간 시작 이전의 미완료. 현재(오늘 포함) 기간에서만 표시(과거/미래 이동 시엔 숨김).
   let overdueBefore = null;
   if (v.type === 'today') overdueBefore = tk;
-  else if (v.type === 'week') {
-    const now = new Date();
-    overdueBefore = keyOf(new Date(now.getFullYear(), now.getMonth(), now.getDate() - ((now.getDay() + 6) % 7)));
-  } else if (v.type === 'month') {
-    const now = new Date();
-    overdueBefore = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-01`;
-  }
+  else if (v.type === 'week' && mondayKeyOf(anchor) === mondayKeyOf(tk)) overdueBefore = mondayKeyOf(tk);
+  else if (v.type === 'month' && monthKeyOf(anchor) === monthKeyOf(tk)) overdueBefore = monthKeyOf(tk) + '-01';
   const overdue = overdueBefore
     ? all.filter(t => !isNote(t) && !t.done && t.date !== null && t.date < overdueBefore)
     : [];
@@ -651,10 +659,40 @@ const byDate = (a, b) =>
 function viewScope() {
   if (view.type === 'today') return 'date:' + todayKey();
   if (view.type === 'date') return 'date:' + view.date;
-  if (view.type === 'week') return 'week';
-  if (view.type === 'month') return 'month';
+  if (view.type === 'week') return 'week:' + mondayKeyOf(view.anchor || todayKey());
+  if (view.type === 'month') return 'month:' + monthKeyOf(view.anchor || todayKey());
   return null;
 }
+// 현재 뷰가 '오늘/이번 주/이번 달'(현재 기간)인가
+function isCurrentPeriod() {
+  if (view.type === 'today') return true;
+  if (view.type === 'date') return view.date === todayKey();
+  if (view.type === 'week') return mondayKeyOf(view.anchor || todayKey()) === mondayKeyOf(todayKey());
+  if (view.type === 'month') return monthKeyOf(view.anchor || todayKey()) === monthKeyOf(todayKey());
+  return false;
+}
+// 가운데 패널 앞뒤 이동 (오늘=일, 주=주, 달=달 단위)
+function navPeriod(delta) {
+  if (view.type === 'today' || view.type === 'date') {
+    goDate(shiftDate(view.type === 'today' ? todayKey() : view.date, delta));
+  } else if (view.type === 'week') {
+    openWeek(shiftDate(view.anchor || todayKey(), delta * 7));
+  } else if (view.type === 'month') {
+    openMonth(shiftMonth(view.anchor || todayKey(), delta));
+  }
+}
+// 현재 기간(오늘/이번 주/이번 달)으로 복귀
+function resetPeriod() {
+  if (view.type === 'week') openWeek(todayKey());
+  else if (view.type === 'month') openMonth(todayKey());
+  else goDate(todayKey());
+}
+function goDate(dk) {                          // 오늘이면 '오늘' 뷰(밀린 표시), 아니면 날짜 뷰
+  if (dk === todayKey()) { flushPendingEdits(); view = { type: 'today', groupId: null }; doneOpen = false; renderAll(); }
+  else openDate(dk);
+}
+function openWeek(anchor) { flushPendingEdits(); view = { type: 'week', groupId: null, anchor: mondayKeyOf(anchor) }; doneOpen = false; renderAll(); }
+function openMonth(anchor) { flushPendingEdits(); view = { type: 'month', groupId: null, anchor: shiftMonth(anchor, 0) }; doneOpen = false; renderAll(); }
 function isPinned(t, scope) { return !!(scope && t.pins && t.pins.includes(scope)); }
 function togglePin(id) {
   const scope = viewScope();
@@ -753,8 +791,18 @@ function viewTitle() {
     return [`${m}월 ${d}일`, `${DOW[dow]}요일` + (view.date === todayKey() ? ' · 오늘' : '')];
   }
   if (view.type === 'today') return ['오늘', fmtDateShort(todayKey())];
-  if (view.type === 'week') return ['이번 주', ''];
-  if (view.type === 'month') return ['이번 달', `${new Date().getMonth() + 1}월`];
+  if (view.type === 'week') {
+    const mk = mondayKeyOf(view.anchor || todayKey());
+    const [my, mm, md] = mk.split('-').map(Number);
+    const sun = new Date(my, mm - 1, md + 6);
+    const cur = mk === mondayKeyOf(todayKey());
+    return [`${mm}월 ${md}일 – ${sun.getMonth() + 1}월 ${sun.getDate()}일`, cur ? '이번 주' : '주간'];
+  }
+  if (view.type === 'month') {
+    const [y, m] = (view.anchor || todayKey()).split('-').map(Number);
+    const cur = monthKeyOf(view.anchor || todayKey()) === monthKeyOf(todayKey());
+    return [`${y}년 ${m}월`, cur ? '이번 달' : ''];
+  }
   if (view.type === 'incomplete') return ['미완료', ''];
   if (view.type === 'all') return ['전체', ''];
   if (view.type === 'done') return ['완료됨', ''];
@@ -771,6 +819,11 @@ function renderList() {
   $('viewTitle').textContent = title;
   $('viewSub').textContent = sub;
   $('backToCal').hidden = (view.type !== 'date'); // 날짜 뷰에서만 '달력으로' 표시
+  // 앞뒤 이동(오늘/날짜=일, 주=주, 달=달) + 현재 기간 복귀 버튼
+  const periodView = view.type === 'today' || view.type === 'date' || view.type === 'week' || view.type === 'month';
+  $('periodNav').hidden = !periodView;
+  $('periodToday').hidden = !periodView || isCurrentPeriod();
+  $('periodToday').textContent = view.type === 'week' ? '이번 주' : view.type === 'month' ? '이번 달' : '오늘';
   // 완료됨 뷰에서는 새 할일을 추가할 곳이 없으므로 입력창 숨김
   document.querySelector('.quick-add').hidden = (view.type === 'done');
   $('quickInput').placeholder = view.type === 'notes' ? '자료 제목 입력 후 Enter' : '할 일 입력 후 Enter';
@@ -2198,6 +2251,8 @@ function bindEvents() {
       flushPendingEdits();
       if (view.type === 'search') { $('searchInput').value = ''; search.q = ''; $('searchClear').hidden = true; prevView = null; }
       view = { type: el.dataset.view, groupId: null };
+      if (view.type === 'week') view.anchor = mondayKeyOf(todayKey());   // 이번 주부터
+      if (view.type === 'month') view.anchor = shiftMonth(todayKey(), 0); // 이번 달부터
       doneOpen = false;
       renderAll();
     }));
@@ -2227,6 +2282,11 @@ function bindEvents() {
 
   // 날짜 뷰 → 달력으로 돌아가기
   $('backToCal').addEventListener('click', () => { view = { type: 'calendar', groupId: null }; renderAll(); });
+
+  // 가운데 패널 앞뒤 이동 (오늘=일, 주=주, 달=달) + 현재 기간 복귀
+  $('periodPrev').addEventListener('click', () => navPeriod(-1));
+  $('periodNext').addEventListener('click', () => navPeriod(1));
+  $('periodToday').addEventListener('click', resetPeriod);
 
   // 뒤로/앞으로 (에디터 상단 버튼)
   $('navBack').addEventListener('click', navBack);

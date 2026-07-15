@@ -100,8 +100,13 @@
   <main class="list-pane">
     <div class="list-head">
       <button id="backToCal" class="back-cal" type="button" title="달력으로" hidden>‹ 달력</button>
+      <div class="period-nav" id="periodNav" hidden>
+        <button id="periodPrev" class="pnav-btn" type="button" title="이전">◀</button>
+        <button id="periodNext" class="pnav-btn" type="button" title="다음">▶</button>
+      </div>
       <h2 id="viewTitle">오늘</h2>
       <span id="viewSub" class="view-sub"></span>
+      <button id="periodToday" class="p-today" type="button" hidden>오늘</button>
     </div>
     <div class="quick-add">
       <input id="quickInput" type="text" placeholder="할 일 입력 후 Enter" autocomplete="off" maxlength="300">

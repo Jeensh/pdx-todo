@@ -366,6 +366,33 @@ body.resizing { cursor: col-resize; user-select: none; }
 }
 .back-cal:hover { background: var(--bg); color: var(--accent); border-color: var(--line-2); }
 
+/* 가운데 패널 기간 앞뒤 이동 */
+.period-nav { display: flex; gap: 2px; align-self: center; }
+.pnav-btn {
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--ink-2);
+  width: 26px; height: 26px;
+  border-radius: 7px;
+  font-size: 10px;
+  cursor: pointer;
+  display: grid; place-items: center;
+}
+.pnav-btn:hover { background: var(--bg); color: var(--accent); border-color: var(--line-2); }
+.p-today {
+  align-self: center;
+  margin-left: auto;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--ink-2);
+  font-family: inherit;
+  font-size: 12.5px;
+  padding: 3px 10px;
+  border-radius: 7px;
+  cursor: pointer;
+}
+.p-today:hover { background: var(--accent-soft); color: var(--accent); border-color: var(--line-2); }
+
 .quick-add { padding: 8px 20px 10px; }
 .quick-add input {
   width: 100%;
