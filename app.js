@@ -781,6 +781,7 @@ function renderSidebar() {
       `<button class="g-del" title="그룹 삭제" tabindex="-1">✕</button>` +
       `<b class="cnt">${cnt || ''}</b>`;
     btn.querySelector('.g-name').textContent = g.name;
+    btn.title = g.name; // 이름 길어 잘릴 때 마우스 올리면 전체 표시
     wrap.appendChild(btn);
   }
   wrap.scrollTop = savedScroll;
