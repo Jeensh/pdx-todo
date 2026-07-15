@@ -33,7 +33,12 @@ function debounce(fn, ms) {
 }
 
 const GROUP_COLORS = ['#3560e0', '#2e8b57', '#c98a04', '#8b5cf6', '#d6558e', '#0e9394'];
-const isNote = t => !!t && t.kind === 'note';  // 정보용 '자료'(완료·날짜 없음) vs 할일
+// 항목 종류: 할일(kind 없음) / 자료(note) / 회의(meeting, 일시+메모) / 휴가(vacation, 하루표시)
+const isNote = t => !!t && t.kind === 'note';
+const isMeeting = t => !!t && t.kind === 'meeting';
+const isVacation = t => !!t && t.kind === 'vacation';
+const isTodo = t => !!t && !t.kind;            // 순수 할일만
+const byTime = (a, b) => (a.time || '').localeCompare(b.time || '') || a.created.localeCompare(b.created);
 
 // 날짜 이동 헬퍼 (앞뒤 이동용)
 function shiftDate(key, days) {
@@ -287,7 +292,8 @@ function buildIndex() {
     todos: data.todos.map(t => ({
       id: t.id, title: t.title, groupId: t.groupId, date: t.date,
       done: t.done, created: t.created, updated: t.updated, hasNote: !!t.hasNote,
-      kind: t.kind === 'note' ? 'note' : undefined,           // 자료 항목
+      kind: ['note', 'meeting', 'vacation'].includes(t.kind) ? t.kind : undefined,
+      time: (t.kind === 'meeting' && t.time) ? t.time : undefined,  // 회의 시간 HH:MM
       pins: (t.pins && t.pins.length) ? t.pins : undefined,   // 상단 고정 범위들
     })),
   };
@@ -308,7 +314,8 @@ function indexToData(idx) {
         created: typeof t.created === 'string' ? t.created : new Date().toISOString(),
         updated: typeof t.updated === 'string' ? t.updated : new Date().toISOString(),
         hasNote: !!t.hasNote,
-        kind: t.kind === 'note' ? 'note' : undefined,
+        kind: ['note', 'meeting', 'vacation'].includes(t.kind) ? t.kind : undefined,
+        time: (t.kind === 'meeting' && typeof t.time === 'string') ? t.time : undefined,
         pins: Array.isArray(t.pins) ? t.pins.filter(x => typeof x === 'string') : [],
         note: undefined, noteLoaded: false,
       });
@@ -633,20 +640,20 @@ function itemsForView(v) {
   else if (v.type === 'group') match = t => t.groupId === v.groupId;
   else match = () => true; // all, done, incomplete
 
-  const active = all.filter(t => !isNote(t) && !t.done && match(t)); // 자료는 할일 목록에서 제외
+  const active = all.filter(t => isTodo(t) && !t.done && match(t)); // 자료는 할일 목록에서 제외
   // "밀린 할 일" = 기간 시작 이전의 미완료. 현재(오늘 포함) 기간에서만 표시(과거/미래 이동 시엔 숨김).
   let overdueBefore = null;
   if (v.type === 'today') overdueBefore = tk;
   else if (v.type === 'week' && mondayKeyOf(anchor) === mondayKeyOf(tk)) overdueBefore = mondayKeyOf(tk);
   else if (v.type === 'month' && monthKeyOf(anchor) === monthKeyOf(tk)) overdueBefore = monthKeyOf(tk) + '-01';
   const overdue = overdueBefore
-    ? all.filter(t => !isNote(t) && !t.done && t.date !== null && t.date < overdueBefore)
+    ? all.filter(t => isTodo(t) && !t.done && t.date !== null && t.date < overdueBefore)
     : [];
   // 각 기간 뷰의 완료함은 그 기간으로만 한정 (오늘=오늘, 주=이번 주, 달=이번 달)
   let done;
   if (v.type === 'incomplete') done = [];                       // 미완료 뷰: 완료 항목 숨김
-  else if (v.type === 'today') done = all.filter(t => !isNote(t) && t.done && t.date === tk);
-  else done = all.filter(t => !isNote(t) && t.done && match(t)); // week/month는 match가 이미 기간 한정
+  else if (v.type === 'today') done = all.filter(t => isTodo(t) && t.done && t.date === tk);
+  else done = all.filter(t => isTodo(t) && t.done && match(t)); // week/month는 match가 이미 기간 한정
   return { active, done, overdue };
 }
 
@@ -751,7 +758,7 @@ function editBrandName() {
 
 function renderSidebar() {
   const tk = todayKey();
-  const act = data.todos.filter(t => !isNote(t) && !t.done); // 자료 제외
+  const act = data.todos.filter(t => isTodo(t) && !t.done); // 자료 제외
   $('cntToday').textContent = act.filter(t => t.date !== null && t.date <= tk).length || '';
   const { active: wk } = itemsForView({ type: 'week' });
   $('cntWeek').textContent = wk.length || '';
@@ -759,7 +766,7 @@ function renderSidebar() {
   $('cntMonth').textContent = mo.length || '';
   $('cntIncomplete').textContent = act.length || '';
   $('cntAll').textContent = act.length || '';
-  $('cntDone').textContent = data.todos.filter(t => !isNote(t) && t.done).length || '';
+  $('cntDone').textContent = data.todos.filter(t => isTodo(t) && t.done).length || '';
   const cn = $('cntNotes'); if (cn) cn.textContent = data.todos.filter(isNote).length || '';
 
   document.querySelectorAll('.nav-item[data-view]').forEach(el =>
@@ -769,7 +776,7 @@ function renderSidebar() {
   const savedScroll = wrap.scrollTop;      // 재렌더 시 그룹 목록 스크롤 위치 유지
   wrap.innerHTML = '';
   for (const g of data.groups) {
-    const cnt = data.todos.filter(t => !isNote(t) && !t.done && t.groupId === g.id).length; // 자료 제외, 미완료 할일만
+    const cnt = data.todos.filter(t => isTodo(t) && !t.done && t.groupId === g.id).length; // 자료 제외, 미완료 할일만
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'nav-item' + (view.type === 'group' && view.groupId === g.id ? ' active' : '');
@@ -816,6 +823,11 @@ function viewTitle() {
 }
 
 function renderList() {
+  // 상단 컨트롤 기본 숨김 (검색/달력 등으로 갈 때 이전 뷰 버튼 잔상 방지)
+  $('backToCal').hidden = true;
+  $('periodNav').hidden = true;
+  $('periodToday').hidden = true;
+  $('vacToggle').hidden = true;
   if (view.type === 'search') { renderSearch(); return; }
   if (view.type === 'calendar') { renderCalendar(); return; }
   $('todoList').classList.remove('cal-mode');
@@ -828,6 +840,12 @@ function renderList() {
   $('periodNav').hidden = !periodView;
   $('periodToday').hidden = !periodView || isCurrentPeriod();
   $('periodToday').textContent = view.type === 'week' ? '이번 주' : view.type === 'month' ? '이번 달' : '오늘';
+  // 휴가 등록/해제 (오늘·날짜 뷰에서만)
+  const dayKey = view.type === 'today' ? todayKey() : view.type === 'date' ? view.date : null;
+  const vac = dayKey && vacationOn(dayKey);
+  $('vacToggle').hidden = !dayKey;
+  $('vacToggle').textContent = vac ? '🏖 휴가 해제' : '🏖 휴가 등록';
+  $('vacToggle').classList.toggle('on', !!vac);
   // 완료됨 뷰에서는 새 할일을 추가할 곳이 없으므로 입력창 숨김
   document.querySelector('.quick-add').hidden = (view.type === 'done');
   $('quickInput').placeholder = view.type === 'notes' ? '자료 제목 입력 후 Enter' : '할 일 입력 후 Enter';
@@ -863,6 +881,18 @@ function renderList() {
     if (done.length === 0) frag.appendChild(emptyEl('완료된 할 일이 없습니다'));
     addRows(done.sort((a, b) => b.updated.localeCompare(a.updated)));
   } else {
+    // 회의 (오늘·날짜 뷰: 그 날의 회의를 시간순으로 맨 위에) + 회의 추가
+    if (dayKey) {
+      const meetings = data.todos.filter(t => isMeeting(t) && t.date === dayKey).sort(byTime);
+      addSec('회의');
+      addRows(meetings);
+      const mBtn = document.createElement('button');
+      mBtn.type = 'button';
+      mBtn.className = 'add-note-row';
+      mBtn.textContent = '＋ 회의 추가';
+      mBtn.addEventListener('click', () => addMeeting(dayKey));
+      frag.appendChild(mBtn);
+    }
     // 상단 고정 (현재 뷰 범위에서 고정된 항목을 맨 위로)
     const scope = viewScope();
     let pinned = [];
@@ -986,30 +1016,39 @@ function renderCalendar() {
   for (let d = 1; d <= daysInMonth; d++) {
     const dk = `${calY}-${pad(calM + 1)}-${pad(d)}`;
     const dow = (firstDow + d - 1) % 7;
-    const items = (byDay[dk] || []).sort((a, b) => a.created.localeCompare(b.created));
+    const dayItems = byDay[dk] || [];
+    const meetings = dayItems.filter(isMeeting).sort(byTime);
+    const todos = dayItems.filter(isTodo).sort((a, b) => a.created.localeCompare(b.created));
+    const isVac = dayItems.some(isVacation);
+    const ordered = [...meetings, ...todos]; // 회의 최우선
 
     const cell = document.createElement('div');
     cell.className = 'cal-cell'
       + (dow === 0 ? ' sun' : dow === 6 ? ' sat' : '')
-      + (dk === tk ? ' today' : '');
+      + (dk === tk ? ' today' : '')
+      + (isVac ? ' vac' : '');
     cell.dataset.day = dk;
 
     let html = `<div class="cal-daynum"><span>${d}</span>` +
       `<button class="cal-add" data-add="${dk}" title="이 날 할 일 추가" tabindex="-1">＋</button></div>`;
     html += '<div class="cal-chips">';
+    if (isVac) html += `<span class="cal-vac">🏖 휴가</span>`;
     const MAX = 4;
-    items.slice(0, MAX).forEach(t => {
+    ordered.slice(0, MAX).forEach(t => {
+      const mtg = isMeeting(t);
       const g = groupOf(t.groupId);
-      const dot = g ? `<span class="chip-dot" style="background:${g.color}"></span>` : '';
-      html += `<button class="cal-chip${t.done ? ' done' : ''}${t.id === selectedId ? ' sel' : ''}" ` +
-        `data-id="${t.id}" title="${escapeText(t.title)}">${dot}<span class="chip-t"></span></button>`;
+      const dot = (!mtg && g) ? `<span class="chip-dot" style="background:${g.color}"></span>` : '';
+      const timeLbl = (mtg && t.time) ? `<span class="chip-time">${escapeText(t.time)}</span>` : '';
+      const tip = escapeText((mtg && t.time ? t.time + ' ' : '') + (t.title || '(제목 없음)'));
+      html += `<button class="cal-chip${mtg ? ' meeting' : ''}${t.done ? ' done' : ''}${t.id === selectedId ? ' sel' : ''}" ` +
+        `data-id="${t.id}" title="${tip}">${dot}${timeLbl}<span class="chip-t"></span></button>`;
     });
-    if (items.length > MAX) html += `<span class="cal-more">+${items.length - MAX}개</span>`;
+    if (ordered.length > MAX) html += `<span class="cal-more">+${ordered.length - MAX}개</span>`;
     html += '</div>';
     cell.innerHTML = html;
     // 제목은 textContent로 안전하게
     const chips = cell.querySelectorAll('.cal-chip .chip-t');
-    items.slice(0, MAX).forEach((t, i) => { chips[i].textContent = t.title || '(제목 없음)'; });
+    ordered.slice(0, MAX).forEach((t, i) => { chips[i].textContent = t.title || '(제목 없음)'; });
     grid.appendChild(cell);
   }
 
@@ -1055,6 +1094,42 @@ function addNote(groupId) {
   $('edTitle').focus();
 }
 
+// 회의(일시+메모) 새로 추가 — 그 날짜로 생성하고 에디터로
+function addMeeting(dateKey) {
+  flushPendingEdits();
+  const t = {
+    id: uid(), title: '', done: false, kind: 'meeting',
+    groupId: null, date: dateKey, time: '09:00', pins: [],
+    note: '', noteLoaded: true, hasNote: false,
+    created: new Date().toISOString(), updated: new Date().toISOString(),
+  };
+  data.todos.push(t);
+  selectedId = t.id;
+  persist();
+  renderAll();
+  $('edTitle').focus();
+}
+
+// 휴가: 하루 등록/해제 (그 날짜의 vacation 항목 토글)
+function vacationOn(dateKey) { return data.todos.some(t => isVacation(t) && t.date === dateKey); }
+function toggleVacation(dateKey) {
+  flushPendingEdits();
+  const ex = data.todos.find(t => isVacation(t) && t.date === dateKey);
+  if (ex) {
+    data.todos = data.todos.filter(t => t.id !== ex.id);
+    if (selectedId === ex.id) selectedId = null;
+  } else {
+    data.todos.push({
+      id: uid(), title: '휴가', done: false, kind: 'vacation',
+      groupId: null, date: dateKey, pins: [],
+      note: '', noteLoaded: true, hasNote: false,
+      created: new Date().toISOString(), updated: new Date().toISOString(),
+    });
+  }
+  persist();
+  renderAll();
+}
+
 function addTodoOnDate(dateKey) {
   flushPendingEdits();
   const t = {
@@ -1073,15 +1148,17 @@ function addTodoOnDate(dateKey) {
 
 function rowEl(t) {
   const note = isNote(t);
+  const meeting = isMeeting(t);
   const scope = viewScope();
-  // 자료 뷰에선 자료가, 그 외(할일/그룹 뷰)에선 할일이 고정 대상
-  const pinnable = !!scope && (view.type === 'notes' ? note : !note);
+  // 자료 뷰에선 자료가, 그 외(할일/그룹 뷰)에선 할일이 고정 대상 (회의는 고정 안 함)
+  const pinnable = !!scope && (view.type === 'notes' ? note : isTodo(t));
   const pinned = pinnable && isPinned(t, scope);
 
   const row = document.createElement('div');
   row.className = 'todo-row'
-    + (!note && t.done ? ' done' : '')
+    + (isTodo(t) && t.done ? ' done' : '')
     + (note ? ' note-row' : '')
+    + (meeting ? ' meeting-row' : '')
     + (pinned ? ' pinned' : '')
     + (t.id === selectedId ? ' selected' : '');
   row.dataset.id = t.id;
@@ -1092,10 +1169,11 @@ function rowEl(t) {
   const hasNote = !!t.hasNote;
 
   const metas = [];
+  if (meeting && t.time) metas.push(`<span class="meta-time">🕐 ${escapeText(t.time)}</span>`);
   if (g && view.type !== 'group') {
     metas.push(`<span class="meta-group"><span class="group-dot" style="background:${g.color}"></span>${escapeText(g.name)}</span>`);
   }
-  if (!note && t.date && view.type !== 'week') {
+  if (isTodo(t) && t.date && view.type !== 'week') {
     const od = !t.done && t.date < tk;
     metas.push(`<span class="meta-date${od ? ' overdue' : ''}">${fmtDateShort(t.date)}</span>`);
   }
@@ -1103,7 +1181,8 @@ function rowEl(t) {
 
   row.innerHTML =
     (note ? `<span class="note-ico" aria-hidden="true">📎</span>`
-          : `<button class="todo-check" type="button" title="완료">✓</button>`) +
+      : meeting ? `<span class="note-ico" aria-hidden="true">📅</span>`
+      : `<button class="todo-check" type="button" title="완료">✓</button>`) +
     `<div class="todo-main">` +
       `<div class="todo-title"></div>` +
       (metas.length ? `<div class="todo-meta">${metas.join('')}</div>` : '') +
@@ -1432,10 +1511,12 @@ function renderEditor() {
     lastEditorNoteId = t.id;
   }
 
-  $('editorBody').classList.toggle('is-note', isNote(t)); // 자료: 완료·날짜 숨김
+  $('editorBody').classList.toggle('is-note', isNote(t));       // 자료: 완료·날짜 숨김
+  $('editorBody').classList.toggle('is-meeting', isMeeting(t)); // 회의: 완료 숨김, 시간 표시
   $('edDone').checked = t.done;
   $('edTitle').value = t.title;
   $('edDate').value = t.date || '';
+  $('edTime').value = t.time || '';
 
   const sel = $('edGroup');
   sel.innerHTML = '<option value="">미분류</option>' +
@@ -2086,7 +2167,7 @@ function addTodo(title) {
 function toggleDone(id) {
   flushPendingEdits(); // 다른 항목 편집 중 체크 시 편집 내용 보존
   const t = data.todos.find(x => x.id === id);
-  if (!t || isNote(t)) return; // 자료는 완료 개념 없음
+  if (!t || !isTodo(t)) return; // 자료·회의·휴가는 완료 개념 없음
   t.done = !t.done;
   t.updated = new Date().toISOString();
   persist();
@@ -2096,7 +2177,7 @@ function toggleDone(id) {
 function deleteTodo(id) {
   const t = data.todos.find(x => x.id === id);
   if (!t) return;
-  confirmBox(`"${t.title || '(제목 없음)'}" ${isNote(t) ? '자료를' : '할 일을'} 삭제할까요?\n메모 내용도 함께 삭제됩니다.`, () => {
+  confirmBox(`"${t.title || '(제목 없음)'}" ${isNote(t) ? '자료를' : isMeeting(t) ? '회의를' : '할 일을'} 삭제할까요?\n메모 내용도 함께 삭제됩니다.`, () => {
     const hadNote = t.hasNote;
     data.todos = data.todos.filter(x => x.id !== id);
     if (selectedId === id) selectedId = null;
@@ -2392,6 +2473,10 @@ function bindEvents() {
   $('periodPrev').addEventListener('click', () => navPeriod(-1));
   $('periodNext').addEventListener('click', () => navPeriod(1));
   $('periodToday').addEventListener('click', resetPeriod);
+  $('vacToggle').addEventListener('click', () => {
+    const dk = view.type === 'today' ? todayKey() : view.type === 'date' ? view.date : null;
+    if (dk) toggleVacation(dk);
+  });
 
   // 뒤로/앞으로 (에디터 상단 버튼)
   $('navBack').addEventListener('click', navBack);
@@ -2555,6 +2640,14 @@ function bindEvents() {
     t.updated = new Date().toISOString();
     persist();
     renderSidebar();
+    renderList();
+  });
+  $('edTime').addEventListener('change', () => {
+    const t = data.todos.find(x => x.id === selectedId);
+    if (!t) return;
+    t.time = $('edTime').value || '';   // HH:MM
+    t.updated = new Date().toISOString();
+    persist();
     renderList();
   });
   $('edGroup').addEventListener('change', () => {

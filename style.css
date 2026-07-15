@@ -398,6 +398,22 @@ body.resizing { cursor: col-resize; user-select: none; }
   cursor: pointer;
 }
 .p-today:hover { background: var(--accent-soft); color: var(--accent); border-color: var(--line-2); }
+.vac-toggle {
+  align-self: center;
+  margin-left: auto;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--ink-2);
+  font-family: inherit;
+  font-size: 12.5px;
+  padding: 3px 10px;
+  border-radius: 7px;
+  cursor: pointer;
+}
+.vac-toggle:hover { border-color: #b8860b; color: #b8860b; }
+.vac-toggle.on { background: rgba(214, 133, 20, 0.12); color: #b8860b; border-color: rgba(214, 133, 20, 0.4); }
+/* 회의 행: 시간 강조 */
+.meta-time { color: var(--accent); font-weight: 600; }
 
 .quick-add { padding: 8px 20px 10px; }
 .quick-add input {
@@ -536,6 +552,9 @@ body.resizing { cursor: col-resize; user-select: none; }
 /* 자료 편집 시: 완료 체크·예정일 숨김 */
 .editor-body.is-note .ed-check,
 .editor-body.is-note #edDate { display: none; }
+#edTime { display: none; }
+.editor-body.is-meeting .ed-check { display: none; }
+.editor-body.is-meeting #edTime { display: inline-block; }
 
 .done-toggle {
   margin: 16px 8px 4px;
@@ -732,6 +751,21 @@ body.resizing { cursor: col-resize; user-select: none; }
 .chip-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
 .chip-t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cal-more { font-size: 10.5px; color: var(--ink-3); padding: 1px 5px; }
+/* 회의 칩(최우선, 강조) + 시간 */
+.cal-chip.meeting { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.cal-chip.meeting:hover { background: rgba(53, 96, 224, 0.16); }
+.chip-time { font-weight: 700; flex-shrink: 0; }
+/* 휴가 표시 */
+.cal-cell.vac { background: rgba(214, 133, 20, 0.07); }
+.cal-vac {
+  display: block;
+  background: rgba(214, 133, 20, 0.15);
+  color: #b8860b;
+  font-size: 10.5px; font-weight: 700;
+  border-radius: 5px;
+  padding: 1px 5px;
+  margin-bottom: 1px;
+}
 
 /* ============ 에디터 패널 ============ */
 
@@ -806,7 +840,7 @@ body.resizing { cursor: col-resize; user-select: none; }
   padding: 10px 22px 12px;
   border-bottom: 1px solid var(--line);
 }
-.ed-meta2 select, .ed-meta2 input[type="date"] {
+.ed-meta2 select, .ed-meta2 input[type="date"], .ed-meta2 input[type="time"] {
   border: 1px solid var(--line-2);
   border-radius: 8px;
   padding: 4px 8px;
