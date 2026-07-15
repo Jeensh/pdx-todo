@@ -446,6 +446,20 @@ body.resizing { cursor: col-resize; user-select: none; }
   color: var(--ink-3);
 }
 .list-sec.overdue { color: var(--danger); }
+/* 섹션 라벨 옆 작은 추가(＋) 버튼 */
+.list-sec.sec-head { display: flex; align-items: center; justify-content: space-between; padding-right: 4px; }
+.sec-add {
+  border: 1px solid var(--line-2);
+  background: var(--panel);
+  color: var(--ink-2);
+  width: 20px; height: 20px;
+  border-radius: 6px;
+  font-size: 13px; line-height: 1;
+  letter-spacing: 0;
+  cursor: pointer;
+  display: grid; place-items: center;
+}
+.sec-add:hover { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
 
 .todo-row {
   display: flex;

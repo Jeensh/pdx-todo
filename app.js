@@ -860,10 +860,19 @@ function renderList() {
   list.innerHTML = '';
   const frag = document.createDocumentFragment();
 
-  const addSec = (label, cls) => {
+  const addSec = (label, cls, onAdd) => {
     const el = document.createElement('div');
-    el.className = 'list-sec' + (cls ? ' ' + cls : '');
-    el.textContent = label;
+    el.className = 'list-sec' + (cls ? ' ' + cls : '') + (onAdd ? ' sec-head' : '');
+    if (onAdd) {
+      const span = document.createElement('span');
+      span.textContent = label;
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'sec-add'; b.title = label + ' 추가'; b.textContent = '＋';
+      b.addEventListener('click', onAdd);
+      el.append(span, b);
+    } else {
+      el.textContent = label;
+    }
     frag.appendChild(el);
   };
   const addRows = items => items.forEach(t => frag.appendChild(rowEl(t)));
@@ -949,14 +958,8 @@ function renderList() {
     // 회의 (오늘·날짜 뷰: 그 날의 회의를 시간순으로 맨 위에) + 회의 추가
     if (dayKey) {
       const meetings = data.todos.filter(t => isMeeting(t) && t.date === dayKey).sort(byTime);
-      addSec('회의');
+      addSec('회의', null, () => addMeeting(dayKey)); // 라벨 옆 ＋ 버튼으로 추가
       addRows(meetings);
-      const mBtn = document.createElement('button');
-      mBtn.type = 'button';
-      mBtn.className = 'add-note-row';
-      mBtn.textContent = '＋ 회의 추가';
-      mBtn.addEventListener('click', () => addMeeting(dayKey));
-      frag.appendChild(mBtn);
     }
     // 상단 고정 (현재 뷰 범위에서 고정된 항목을 맨 위로)
     const scope = viewScope();
