@@ -1513,6 +1513,28 @@ function handleEnterInPre() {
   return true;
 }
 
+// Shift+Tab: 캐럿 앞 들여쓰기 한 단위(탭 또는 공백/nbsp) 제거
+function outdentAtCaret() {
+  const sel = window.getSelection();
+  if (!sel.rangeCount || !sel.isCollapsed) return;
+  const range = sel.getRangeAt(0);
+  let node = range.startContainer, off = range.startOffset;
+  if (node.nodeType === 1) {          // 캐럿이 요소 경계면 앞쪽 텍스트노드로
+    const prev = node.childNodes[off - 1];
+    if (!prev || prev.nodeType !== 3) return;
+    node = prev; off = node.textContent.length;
+  }
+  if (node.nodeType !== 3) return;
+  const before = node.textContent.slice(0, off);
+  let rm = 0;
+  if (before.endsWith('\t')) rm = 1;
+  else { const m = before.match(/[  ]{1,4}$/); if (m) rm = m[0].length; }
+  if (!rm) return;
+  node.textContent = node.textContent.slice(0, off - rm) + node.textContent.slice(off);
+  const r = document.createRange(); r.setStart(node, off - rm); r.collapse(true);
+  sel.removeAllRanges(); sel.addRange(r);
+}
+
 // contenteditable가 비었으면(잔여 <br> 포함) placeholder가 다시 뜨도록 완전히 비움
 function normalizeEmptyNote() {
   const n = $('edNote');
@@ -2592,21 +2614,39 @@ function bindEvents() {
     } else if (!e.key.startsWith('Arrow') && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
       note.querySelectorAll('img.img-selected').forEach(i => i.classList.remove('img-selected'));
     }
-    if (e.key === 'Tab' && currentCell()) {
-      // 표 안에서 Tab으로 셀 이동은 브라우저 기본에 맡기지 않고 들여쓰기 방지만
-      e.preventDefault();
+    if (e.key === 'Tab') {
+      e.preventDefault(); // 브라우저 기본(포커스 이동) 방지
       const cell = currentCell();
-      const cells = Array.from(cell.closest('table').querySelectorAll('td, th'));
-      const i = cells.indexOf(cell);
-      const next = cells[e.shiftKey ? i - 1 : i + 1];
-      if (next) {
-        const r = document.createRange();
-        r.selectNodeContents(next);
-        r.collapse(true);
-        const sel = window.getSelection();
-        sel.removeAllRanges();
-        sel.addRange(r);
+      if (cell) {
+        // 표 안에서는 Tab으로 셀 이동
+        const cells = Array.from(cell.closest('table').querySelectorAll('td, th'));
+        const i = cells.indexOf(cell);
+        const next = cells[e.shiftKey ? i - 1 : i + 1];
+        if (next) {
+          const r = document.createRange();
+          r.selectNodeContents(next);
+          r.collapse(true);
+          const sel = window.getSelection();
+          sel.removeAllRanges();
+          sel.addRange(r);
+        }
+        return;
       }
+      // 일반 본문/코드블록: Tab=들여쓰기 삽입, Shift+Tab=내어쓰기
+      if (e.shiftKey) { outdentAtCaret(); saveNote(); return; }
+      const sel = window.getSelection();
+      if (!sel.rangeCount) return;
+      const range = sel.getRangeAt(0);
+      range.deleteContents();
+      const el = range.startContainer.nodeType === 1 ? range.startContainer : range.startContainer.parentNode;
+      const inPre = el && el.closest && el.closest('pre');
+      // 코드블록은 실제 탭('\t', pre-wrap이 보존), 일반 텍스트는 nbsp 4칸(접힘·style 없이 sanitize 안전)
+      const tn = document.createTextNode(inPre ? '\t' : '    ');
+      range.insertNode(tn);
+      const r = document.createRange(); r.setStart(tn, tn.textContent.length); r.collapse(true);
+      sel.removeAllRanges(); sel.addRange(r);
+      saveNote();
+      return;
     }
   });
 
