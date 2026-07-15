@@ -81,7 +81,7 @@ let search = {
   hlTerms: [],             // 열린 메모에서 강조할 검색어
 };
 let prevView = null;       // 검색 종료 시 복귀할 뷰
-const SEARCH_PAGE = 40;
+const SEARCH_PAGE = 10;  // 검색 결과 한 번에 표시 개수 (나머지는 '더보기')
 // 본문 텍스트 캐시: id -> { updated, title, titleLc, body, bodyLc }
 const searchCache = new Map();
 
