@@ -326,6 +326,12 @@ body.resizing { cursor: col-resize; user-select: none; }
 .add-group { color: var(--ink-3); font-size: 12.5px; }
 .add-group:hover { color: var(--accent); }
 
+/* 그룹 드래그 순서 조정 */
+.nav-item[data-group] { cursor: grab; }
+.nav-item[data-group].dragging { opacity: 0.4; cursor: grabbing; }
+.nav-item[data-group].drop-before { box-shadow: inset 0 2px 0 var(--accent); }
+.nav-item[data-group].drop-after { box-shadow: inset 0 -2px 0 var(--accent); }
+
 .group-input {
   width: 100%;
   margin: 2px 0;

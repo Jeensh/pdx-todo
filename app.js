@@ -773,6 +773,7 @@ function renderSidebar() {
     btn.type = 'button';
     btn.className = 'nav-item' + (view.type === 'group' && view.groupId === g.id ? ' active' : '');
     btn.dataset.group = g.id;
+    btn.draggable = true; // 드래그로 순서 조정
     btn.innerHTML =
       `<span class="group-dot" style="background:${g.color}"></span>` +
       `<span class="g-name"></span>` +
@@ -2209,6 +2210,19 @@ function afterGroupRename(id) {
   }
 }
 
+// 그룹 순서 재정렬 (드래그앤드롭): dragId를 targetId 앞/뒤로 이동
+function reorderGroup(dragId, targetId, after) {
+  const g = data.groups;
+  const from = g.findIndex(x => x.id === dragId);
+  if (from < 0 || dragId === targetId) return;
+  const [moved] = g.splice(from, 1);
+  let to = g.findIndex(x => x.id === targetId);
+  if (to < 0) { g.splice(from, 0, moved); return; } // 대상 없음 → 원복
+  g.splice(after ? to + 1 : to, 0, moved);
+  persist();
+  renderSidebar();
+}
+
 function deleteGroup(id) {
   const g = groupOf(id);
   if (!g) return;
@@ -2317,6 +2331,44 @@ function bindEvents() {
   });
 
   $('btnAddGroup').addEventListener('click', addGroupInline);
+
+  // 그룹 드래그로 순서 조정
+  let dragGroupId = null;
+  const clearDropMarks = () => $('groupList').querySelectorAll('.drop-before, .drop-after')
+    .forEach(el => el.classList.remove('drop-before', 'drop-after'));
+  const endGroupDrag = () => {
+    dragGroupId = null;
+    $('groupList').querySelectorAll('.dragging').forEach(el => el.classList.remove('dragging'));
+    clearDropMarks();
+  };
+  $('groupList').addEventListener('dragstart', e => {
+    const item = e.target.closest('.nav-item[data-group]');
+    if (!item) return;
+    dragGroupId = item.dataset.group;
+    if (e.dataTransfer) { e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', dragGroupId); } catch (_) {} }
+    item.classList.add('dragging');
+  });
+  $('groupList').addEventListener('dragover', e => {
+    if (!dragGroupId) return;
+    e.preventDefault();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+    clearDropMarks();
+    const item = e.target.closest('.nav-item[data-group]');
+    if (!item || item.dataset.group === dragGroupId) return;
+    const r = item.getBoundingClientRect();
+    item.classList.add((e.clientY - r.top) > r.height / 2 ? 'drop-after' : 'drop-before');
+  });
+  $('groupList').addEventListener('drop', e => {
+    if (!dragGroupId) return;
+    e.preventDefault();
+    const item = e.target.closest('.nav-item[data-group]');
+    if (item && item.dataset.group !== dragGroupId) {
+      const r = item.getBoundingClientRect();
+      reorderGroup(dragGroupId, item.dataset.group, (e.clientY - r.top) > r.height / 2);
+    }
+    endGroupDrag();
+  });
+  $('groupList').addEventListener('dragend', endGroupDrag);
 
   // 섹션 헤더 클릭 → 접기/펼치기 (상태는 이 기기에만 저장)
   document.querySelectorAll('.nav-section .sep-toggle').forEach(btn =>
