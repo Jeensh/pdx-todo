@@ -768,7 +768,7 @@ function renderSidebar() {
   const savedScroll = wrap.scrollTop;      // 재렌더 시 그룹 목록 스크롤 위치 유지
   wrap.innerHTML = '';
   for (const g of data.groups) {
-    const cnt = data.todos.filter(t => !t.done && t.groupId === g.id).length;
+    const cnt = data.todos.filter(t => !isNote(t) && !t.done && t.groupId === g.id).length; // 자료 제외, 미완료 할일만
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'nav-item' + (view.type === 'group' && view.groupId === g.id ? ' active' : '');
