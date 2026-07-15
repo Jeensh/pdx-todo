@@ -39,6 +39,11 @@ const isMeeting = t => !!t && t.kind === 'meeting';
 const isVacation = t => !!t && t.kind === 'vacation';
 const isTodo = t => !!t && !t.kind;            // 순수 할일만
 const byTime = (a, b) => (a.time || '').localeCompare(b.time || '') || a.created.localeCompare(b.created);
+const byNewest = (a, b) => (b.created || '').localeCompare(a.created || '');   // 최신 생성 먼저
+const byUpdated = (a, b) => (b.updated || '').localeCompare(a.updated || '');  // 최근 수정 먼저
+const byMeetDesc = (a, b) => (b.date || '').localeCompare(a.date || '') || (b.time || '').localeCompare(a.time || '');
+
+const GROUP_PAGE = 10;                          // 그룹 뷰 섹션당 한 번에 표시 개수
 
 // 날짜 이동 헬퍼 (앞뒤 이동용)
 function shiftDate(key, days) {
@@ -62,6 +67,8 @@ let data = null;        // { groups:[], todos:[], meta:{savedAt} }
 let view = { type: 'today', groupId: null };
 let selectedId = null;
 let doneOpen = false;
+let groupPage = { todo: 1, note: 1, meeting: 1 }; // 그룹 뷰 섹션별 페이지
+let groupMeetOpen = false;                        // 그룹 회의 섹션 접힘(기본 닫힘)
 let imgTargetId = null; // 비동기 이미지 삽입이 겨냥한 메모 id
 let bc = null;          // 탭 간 동기화 채널
 let curDayKey = todayKey();
@@ -874,6 +881,65 @@ function renderList() {
     return;
   }
 
+  // 그룹 뷰: 섹션별(고정/할일/완료/자료/회의) 최신순 + 개수 제한 + 더보기
+  if (view.type === 'group') {
+    const gid = view.groupId, scope = viewScope();
+    const more = (total, shown, key) => {
+      if (total <= shown) return;
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'search-more';
+      b.textContent = `더보기 (남은 ${total - shown}개)`;
+      b.addEventListener('click', () => { groupPage[key]++; renderList(); });
+      frag.appendChild(b);
+    };
+    const pageRows = (items, key) => {
+      const shown = items.slice(0, groupPage[key] * GROUP_PAGE);
+      addRows(shown);
+      more(items.length, shown.length, key);
+    };
+    const collapsible = (label, open, onToggle) => {
+      const btn = document.createElement('button');
+      btn.type = 'button'; btn.className = 'done-toggle';
+      btn.textContent = `${open ? '▾' : '▸'} ${label}`;
+      btn.addEventListener('click', onToggle);
+      frag.appendChild(btn);
+    };
+
+    const gTodos = data.todos.filter(t => isTodo(t) && !t.done && t.groupId === gid);
+    const pinned = gTodos.filter(t => isPinned(t, scope)).sort(byNewest);
+    const active = gTodos.filter(t => !isPinned(t, scope)).sort(byNewest);
+    const gdone = data.todos.filter(t => isTodo(t) && t.done && t.groupId === gid).sort(byUpdated);
+    const notes = data.todos.filter(t => isNote(t) && t.groupId === gid).sort(byUpdated);
+    const meetings = data.todos.filter(t => isMeeting(t) && t.groupId === gid).sort(byMeetDesc);
+
+    if (pinned.length) { addSec(`📌 고정 ${pinned.length}`, 'pinned'); addRows(pinned); }
+    addSec('할 일');
+    if (active.length === 0 && pinned.length === 0) frag.appendChild(emptyEl('할 일이 없습니다'));
+    pageRows(active, 'todo');
+    if (gdone.length) {
+      collapsible(`완료 ${gdone.length}`, doneOpen, () => { doneOpen = !doneOpen; renderList(); });
+      if (doneOpen) addRows(gdone);
+    }
+    // 자료
+    addSec('자료');
+    pageRows(notes, 'note');
+    const addN = document.createElement('button');
+    addN.type = 'button'; addN.className = 'add-note-row'; addN.textContent = '＋ 자료 추가';
+    addN.addEventListener('click', () => addNote(gid));
+    frag.appendChild(addN);
+    // 회의 (하단, 기본 닫힘)
+    collapsible(`회의 ${meetings.length}`, groupMeetOpen, () => { groupMeetOpen = !groupMeetOpen; renderList(); });
+    if (groupMeetOpen) {
+      pageRows(meetings, 'meeting');
+      const addM = document.createElement('button');
+      addM.type = 'button'; addM.className = 'add-note-row'; addM.textContent = '＋ 회의 추가';
+      addM.addEventListener('click', () => addMeeting(todayKey(), gid));
+      frag.appendChild(addM);
+    }
+    list.appendChild(frag);
+    return;
+  }
+
   let { active, done, overdue } = itemsForView(view);
 
   if (view.type === 'done') {
@@ -936,19 +1002,6 @@ function renderList() {
       tbtn.addEventListener('click', () => { doneOpen = !doneOpen; renderList(); });
       frag.appendChild(tbtn);
       if (doneOpen) addRows(done.sort((a, b) => b.updated.localeCompare(a.updated)));
-    }
-    // 그룹 뷰: 그 그룹의 자료 + 자료 추가 버튼
-    if (view.type === 'group') {
-      const notes = data.todos.filter(t => isNote(t) && t.groupId === view.groupId)
-        .sort((a, b) => b.updated.localeCompare(a.updated));
-      addSec('자료');
-      addRows(notes);
-      const addBtn = document.createElement('button');
-      addBtn.type = 'button';
-      addBtn.className = 'add-note-row';
-      addBtn.textContent = '＋ 자료 추가';
-      addBtn.addEventListener('click', () => addNote(view.groupId));
-      frag.appendChild(addBtn);
     }
   }
   list.appendChild(frag);
@@ -1094,12 +1147,12 @@ function addNote(groupId) {
   $('edTitle').focus();
 }
 
-// 회의(일시+메모) 새로 추가 — 그 날짜로 생성하고 에디터로
-function addMeeting(dateKey) {
+// 회의(일시+메모) 새로 추가 — 그 날짜(+선택 그룹)로 생성하고 에디터로
+function addMeeting(dateKey, groupId) {
   flushPendingEdits();
   const t = {
     id: uid(), title: '', done: false, kind: 'meeting',
-    groupId: null, date: dateKey, time: '09:00', pins: [],
+    groupId: groupId || null, date: dateKey, time: '09:00', pins: [],
     note: '', noteLoaded: true, hasNote: false,
     created: new Date().toISOString(), updated: new Date().toISOString(),
   };
@@ -2454,6 +2507,8 @@ function bindEvents() {
     flushPendingEdits();
     view = { type: 'group', groupId: item.dataset.group };
     doneOpen = false;
+    groupPage = { todo: 1, note: 1, meeting: 1 };  // 그룹 진입 시 페이지 초기화
+    groupMeetOpen = false;                          // 회의 섹션 기본 닫힘
     renderAll();
   });
 
