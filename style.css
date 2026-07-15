@@ -504,6 +504,23 @@ body.resizing { cursor: col-resize; user-select: none; }
 .row-pin:hover { background: var(--accent-soft); }
 .list-sec.pinned { color: var(--accent); }
 
+/* 그룹 뷰의 '＋ 자료 추가' 버튼 */
+.add-note-row {
+  display: block;
+  width: calc(100% - 16px);
+  margin: 4px 8px 10px;
+  padding: 8px 10px;
+  border: 1px dashed var(--line-2);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--ink-3);
+  font-family: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  text-align: left;
+}
+.add-note-row:hover { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
+
 /* 자료(정보용) 행: 체크박스 대신 📎, 완료 개념 없음 */
 .note-ico {
   width: 18px; flex-shrink: 0;

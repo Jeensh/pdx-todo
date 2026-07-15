@@ -661,6 +661,7 @@ function viewScope() {
   if (view.type === 'date') return 'date:' + view.date;
   if (view.type === 'week') return 'week:' + mondayKeyOf(view.anchor || todayKey());
   if (view.type === 'month') return 'month:' + monthKeyOf(view.anchor || todayKey());
+  if (view.type === 'group') return 'group:' + view.groupId;
   return null;
 }
 // 현재 뷰가 '오늘/이번 주/이번 달'(현재 기간)인가
@@ -900,11 +901,18 @@ function renderList() {
       frag.appendChild(tbtn);
       if (doneOpen) addRows(done.sort((a, b) => b.updated.localeCompare(a.updated)));
     }
-    // 그룹 뷰: 그 그룹에 속한 자료
+    // 그룹 뷰: 그 그룹의 자료 + 자료 추가 버튼
     if (view.type === 'group') {
       const notes = data.todos.filter(t => isNote(t) && t.groupId === view.groupId)
         .sort((a, b) => b.updated.localeCompare(a.updated));
-      if (notes.length) { addSec('자료'); addRows(notes); }
+      addSec('자료');
+      addRows(notes);
+      const addBtn = document.createElement('button');
+      addBtn.type = 'button';
+      addBtn.className = 'add-note-row';
+      addBtn.textContent = '＋ 자료 추가';
+      addBtn.addEventListener('click', () => addNote(view.groupId));
+      frag.appendChild(addBtn);
     }
   }
   list.appendChild(frag);
@@ -1022,6 +1030,22 @@ function openDate(dk) {
   view = { type: 'date', groupId: null, date: dk };
   doneOpen = false;
   renderAll();
+}
+
+// 자료(정보용 메모) 새로 추가 — 그룹에 속하게 생성하고 에디터로
+function addNote(groupId) {
+  flushPendingEdits();
+  const t = {
+    id: uid(), title: '', done: false, kind: 'note',
+    groupId: groupId || null, date: null, pins: [],
+    note: '', noteLoaded: true, hasNote: false,
+    created: new Date().toISOString(), updated: new Date().toISOString(),
+  };
+  data.todos.push(t);
+  selectedId = t.id;
+  persist();
+  renderAll();
+  $('edTitle').focus();
 }
 
 function addTodoOnDate(dateKey) {
