@@ -446,20 +446,22 @@ body.resizing { cursor: col-resize; user-select: none; }
   color: var(--ink-3);
 }
 .list-sec.overdue { color: var(--danger); }
-/* 섹션 라벨 옆 작은 추가(＋) 버튼 */
-.list-sec.sec-head { display: flex; align-items: center; justify-content: space-between; padding-right: 4px; }
+/* 섹션 라벨 바로 옆 추가(+) 버튼 */
+.list-sec.sec-head { display: flex; align-items: center; gap: 6px; }
 .sec-add {
-  border: 1px solid var(--line-2);
-  background: var(--panel);
-  color: var(--ink-2);
-  width: 20px; height: 20px;
-  border-radius: 6px;
-  font-size: 13px; line-height: 1;
+  border: 0;
+  background: var(--accent-soft);
+  color: var(--accent);
+  width: 18px; height: 18px;
+  border-radius: 50%;
+  font-size: 14px; line-height: 1; font-weight: 700;
   letter-spacing: 0;
   cursor: pointer;
   display: grid; place-items: center;
+  transition: background 0.12s ease, color 0.12s ease, transform 0.08s ease;
 }
-.sec-add:hover { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
+.sec-add:hover { background: var(--accent); color: #fff; }
+.sec-add:active { transform: scale(0.88); }
 
 .todo-row {
   display: flex;

@@ -867,7 +867,7 @@ function renderList() {
       const span = document.createElement('span');
       span.textContent = label;
       const b = document.createElement('button');
-      b.type = 'button'; b.className = 'sec-add'; b.title = label + ' 추가'; b.textContent = '＋';
+      b.type = 'button'; b.className = 'sec-add'; b.title = label + ' 추가'; b.textContent = '+';
       b.addEventListener('click', onAdd);
       el.append(span, b);
     } else {
