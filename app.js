@@ -105,7 +105,7 @@ const ALLOWED_TAGS = new Set([
   'H1', 'H2', 'H3', 'H4', 'UL', 'OL', 'LI', 'HR', 'A', 'IMG',
   'TABLE', 'THEAD', 'TBODY', 'TR', 'TD', 'TH', 'BLOCKQUOTE', 'PRE', 'CODE', 'FONT',
 ]);
-const ALLOWED_ATTRS = { A: ['href', 'data-todo'], IMG: ['src', 'alt', 'data-ref'], TD: ['colspan', 'rowspan', 'class'], TH: ['colspan', 'rowspan', 'class'] };
+const ALLOWED_ATTRS = { A: ['href', 'data-todo'], IMG: ['src', 'alt', 'data-ref'], TD: ['colspan', 'rowspan', 'class'], TH: ['colspan', 'rowspan', 'class'], FONT: ['color', 'size'] };
 
 // 속성값 안전 이스케이프 (링크 URL 등)
 function escapeAttr(s) {
@@ -141,6 +141,12 @@ function sanitizeHTML(html) {
         if ((child.tagName === 'TD' || child.tagName === 'TH') && child.hasAttribute('class')) {
           const hl = child.getAttribute('class').split(/\s+/).find(c => /^hl-(yellow|green|blue|pink|gray)$/.test(c));
           if (hl) child.setAttribute('class', hl); else child.removeAttribute('class');
+        }
+        if (child.tagName === 'FONT') { // 글자색(색상값)·크기(1~7)만 허용 — 값 검증
+          const color = child.getAttribute('color') || '';
+          if (color && !/^#[0-9a-fA-F]{3,8}$|^rgba?\(|^[a-zA-Z]{3,20}$/.test(color)) child.removeAttribute('color');
+          const size = child.getAttribute('size') || '';
+          if (size && !/^[1-7]$/.test(size)) child.removeAttribute('size');
         }
         if (child.tagName === 'A') {
           // 제어문자/공백을 제거한 뒤 위험 스킴 차단 (jav\tascript: 등 우회 방지)
@@ -1957,6 +1963,38 @@ function insertHTMLAtCaret(html) {
   saveNote();
 }
 
+// 선택 영역에 글자 크기(fontSize 1~7)·색상(foreColor) 적용 — <font>로 저장(sanitize 허용)
+function applySelFormat(cmd, val) {
+  const ed = $('edNote');
+  const sel = window.getSelection();
+  if (!sel.rangeCount || sel.isCollapsed || !ed.contains(sel.anchorNode)) return;
+  ed.focus();
+  try { document.execCommand('styleWithCSS', false, false); } catch (e) {}
+  document.execCommand(cmd, false, val);
+  saveNote();
+  updateSelBar();
+}
+
+// 드래그 선택 시 뜨는 서식 툴바 위치/표시 갱신
+function updateSelBar() {
+  const bar = $('selBar'), ed = $('edNote');
+  const sel = window.getSelection();
+  if ($('editorBody').hidden || !sel.rangeCount || sel.isCollapsed ||
+      !ed.contains(sel.anchorNode) || !ed.contains(sel.focusNode)) {
+    bar.hidden = true; return;
+  }
+  const rect = sel.getRangeAt(0).getBoundingClientRect();
+  if (!rect.width && !rect.height) { bar.hidden = true; return; }
+  bar.hidden = false;
+  const bw = bar.offsetWidth, bh = bar.offsetHeight;
+  let top = rect.top - bh - 8;
+  if (top < 6) top = rect.bottom + 8;
+  let left = rect.left + rect.width / 2 - bw / 2;
+  left = Math.max(6, Math.min(left, window.innerWidth - bw - 6));
+  bar.style.top = top + 'px';
+  bar.style.left = left + 'px';
+}
+
 // 붙여넣은 HTML을 라이브 에디터에 넣기 전 방어:
 // sanitize(외부 img 제거) 후 resolveImages로 images/ 상대참조를 blob으로 치환(파일 없으면 제거).
 // resolveImages는 비활성 DOMParser를 쓰고 FSA로 로컬 파일만 읽으므로 서버 GET을 내지 않는다.
@@ -2839,6 +2877,24 @@ function bindEvents() {
 
   note.addEventListener('paste', e => {
     imgTargetId = selectedId;
+    // 코드블록(<pre>) 안에 붙여넣기 → 서식 무시하고 평문만 (IntelliJ 등에서 중첩 코드영역 생기는 것 방지)
+    const sel = window.getSelection();
+    const anchorEl = sel.rangeCount ? (sel.anchorNode.nodeType === 1 ? sel.anchorNode : sel.anchorNode.parentNode) : null;
+    const pre = anchorEl && anchorEl.closest ? anchorEl.closest('pre') : null;
+    if (pre && note.contains(pre)) {
+      e.preventDefault();
+      const plain = e.clipboardData.getData('text/plain');
+      if (plain && sel.rangeCount) {
+        const range = sel.getRangeAt(0);
+        range.deleteContents();
+        const tn = document.createTextNode(plain);
+        range.insertNode(tn);
+        const r = document.createRange(); r.setStart(tn, tn.length); r.collapse(true);
+        sel.removeAllRanges(); sel.addRange(r);
+        saveNote();
+      }
+      return;
+    }
     const html = e.clipboardData.getData('text/html');
     // 엑셀/HWP는 표 HTML과 셀 비트맵을 함께 넣음 → 표가 있으면 표를 우선
     if (html && /<table[\s>]/i.test(html)) {
@@ -2976,8 +3032,23 @@ function bindEvents() {
          (sel.anchorNode === img));
       if (!stillOn) img.classList.remove('img-selected');
     }
+    // 선택 사라지면 서식 툴바 숨김
+    const s = window.getSelection();
+    if (!s.rangeCount || s.isCollapsed) $('selBar').hidden = true;
   });
   note.addEventListener('scroll', updateTableBar);
+
+  // 선택 서식 툴바: 드래그/키보드 선택 시 표시, 버튼으로 크기·색 적용
+  note.addEventListener('mouseup', () => setTimeout(updateSelBar, 0));
+  note.addEventListener('keyup', e => { if (e.shiftKey || e.key.startsWith('Arrow')) setTimeout(updateSelBar, 0); });
+  document.addEventListener('scroll', () => { if (!$('selBar').hidden) updateSelBar(); }, true);
+  $('selBar').addEventListener('mousedown', e => {
+    const btn = e.target.closest('[data-fs], [data-color]');
+    if (!btn) return;
+    e.preventDefault(); // 선택 유지 (focus 안 뺏김)
+    if (btn.dataset.fs) applySelFormat('fontSize', btn.dataset.fs);
+    else applySelFormat('foreColor', btn.dataset.color);
+  });
   $('tableBar').addEventListener('click', e => {
     const hl = e.target.closest('button[data-hl]');
     if (hl) { applyHighlight(hl.dataset.hl); return; }

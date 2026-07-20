@@ -946,6 +946,41 @@ body.resizing { cursor: col-resize; user-select: none; }
   color: var(--ink);
   tab-size: 2;
 }
+/* 글자 크기(대/중/소) — <font size> 매핑 (중=3은 기본) */
+.ed-note font[size="5"] { font-size: 1.45em; }
+.ed-note font[size="4"] { font-size: 1.2em; }
+.ed-note font[size="3"] { font-size: 1em; }
+.ed-note font[size="2"] { font-size: 0.82em; }
+.ed-note font[size="1"] { font-size: 0.72em; }
+
+/* 선택 서식 툴바 */
+.sel-bar {
+  position: fixed;
+  z-index: 90;
+  display: flex; align-items: center; gap: 3px;
+  padding: 4px 6px;
+  background: var(--panel);
+  border: 1px solid var(--line-2);
+  border-radius: 9px;
+  box-shadow: 0 4px 16px rgba(20, 24, 32, 0.16);
+}
+.sb-size {
+  border: 0; background: none; cursor: pointer;
+  color: var(--ink); font-weight: 700; font-family: inherit;
+  width: 26px; height: 26px; border-radius: 6px;
+  display: grid; place-items: center; line-height: 1;
+}
+.sb-size:hover { background: var(--bg); color: var(--accent); }
+.sb-size[data-fs="5"] { font-size: 17px; }
+.sb-size[data-fs="3"] { font-size: 14px; }
+.sb-size[data-fs="2"] { font-size: 11px; }
+.sb-sep { width: 1px; height: 18px; background: var(--line); margin: 0 3px; }
+.sb-color {
+  width: 18px; height: 18px; border-radius: 50%;
+  border: 1px solid rgba(0, 0, 0, 0.14); cursor: pointer; padding: 0;
+  transition: transform 0.08s ease;
+}
+.sb-color:hover { transform: scale(1.18); }
 .ed-note img {
   max-width: 100%;
   border-radius: 8px;
