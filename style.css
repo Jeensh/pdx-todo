@@ -541,6 +541,19 @@ body.resizing { cursor: col-resize; user-select: none; }
 .row-pin.on { visibility: visible; filter: none; }
 .row-pin:hover { background: var(--accent-soft); }
 .list-sec.pinned { color: var(--accent); }
+/* 밀린 할 일 숨기기 버튼 */
+.row-hide {
+  border: 0; background: none;
+  font-size: 13px;
+  padding: 2px 5px;
+  border-radius: 6px;
+  visibility: hidden;
+  flex-shrink: 0;
+  filter: grayscale(1) opacity(0.55);
+}
+.todo-row:hover .row-hide { visibility: visible; }
+.row-hide.on { visibility: visible; filter: grayscale(1) opacity(0.75); }
+.row-hide:hover { background: var(--bg); filter: none; }
 
 /* 그룹 뷰의 '＋ 자료 추가' 버튼 */
 .add-note-row {
