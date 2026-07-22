@@ -53,7 +53,7 @@
     <div class="gate-sep" id="gateSep"><span>폴더 선택이 막히나요?</span></div>
     <button id="gateOpfs" class="gate-btn2" type="button">💾 이 브라우저에 저장</button>
     <p class="gate-alt-hint" id="gateOpfsHint">보안 프로그램(Waterwall 등)으로 폴더 선택·드래그가 막힐 때. 빠르고, 데이터는 이 PC에 저장됩니다(정기 <b>백업</b> 권장).</p>
-    <button id="gateImport" class="gate-link" type="button">백업 파일에서 복원</button>
+    <button id="gateImport" class="gate-link" type="button">백업에서 복원</button>
   </div>
 </div>
 
@@ -227,6 +227,28 @@
       <span class="btn-gap"></span>
       <button id="linkCancel" class="btn ghost" type="button">취소</button>
       <button id="linkInsert" class="btn primary" type="button">삽입</button>
+    </div>
+  </div>
+</div>
+
+<!-- 백업 / 복원 모달 -->
+<div class="modal-backdrop" id="backupModal" hidden>
+  <div class="modal-card wide" role="dialog" aria-modal="true" aria-labelledby="bkTitle">
+    <h3 id="bkTitle" class="modal-title">백업 / 복원</h3>
+    <p class="confirm-msg">메모 전체(할일·메모·이미지)를 <b>파일 한 개</b>로 백업하고, 그 파일 하나로 복원합니다. 폴더를 다시 올릴 필요 없습니다.</p>
+    <div class="bk-row">
+      <button id="bkExportFile" class="btn primary" type="button">⬇ 파일로 백업</button>
+      <button id="bkImportFile" class="btn ghost" type="button">⬆ 파일에서 복원</button>
+    </div>
+    <div class="gate-sep"><span>파일 선택이 막히면 (텍스트로)</span></div>
+    <textarea id="bkText" class="bk-text" placeholder="여기에 백업 텍스트가 나타납니다. 복원하려면 보관해 둔 백업 텍스트를 여기에 붙여넣으세요."></textarea>
+    <div class="bk-row">
+      <button id="bkCopy" class="btn ghost" type="button">📋 텍스트로 백업(복사)</button>
+      <button id="bkPasteRestore" class="btn ghost" type="button">붙여넣어 복원</button>
+    </div>
+    <div class="modal-btns">
+      <span class="btn-gap"></span>
+      <button id="bkClose" class="btn ghost" type="button">닫기</button>
     </div>
   </div>
 </div>

@@ -625,36 +625,53 @@ function downloadBlob(blob, name) {
   setTimeout(() => URL.revokeObjectURL(url), 1500);
 }
 
-// 전체를 단일 JSON으로 묶어 백업 파일 저장(다운로드)
+// 전체를 단일 JSON 번들로 묶기 (index + 노트 본문 + 이미지 base64)
+async function buildBundle() {
+  flushPendingEdits();
+  await writeIndexNow();
+  const bundle = { app: 'pdx-todo', version: 1, index: buildIndex(), notes: {}, images: {} };
+  for (const t of data.todos) {
+    if (t.hasNote) { try { bundle.notes[t.id] = await fsReadText(`notes/${t.id}.html`); } catch (e) {} }
+  }
+  try {
+    const imgDir = await rootHandle.getDirectoryHandle('images', { create: false });
+    for await (const [name, h] of imgDir.entries()) {
+      if (h.kind === 'file') { try { bundle.images[name] = bytesToBase64(await fsReadBytes(`images/${name}`)); } catch (e) {} }
+    }
+  } catch (e) { /* images 폴더 없음 */ }
+  return bundle;
+}
+
+// ① 파일로 저장(다운로드)
 async function exportBackup() {
   if (!connected) { toast('먼저 저장소를 연결하세요', true); return; }
-  flushPendingEdits();
   try {
-    await writeIndexNow();
-    const bundle = { app: 'pdx-todo', version: 1, index: buildIndex(), notes: {}, images: {} };
-    for (const t of data.todos) {
-      if (t.hasNote) { try { bundle.notes[t.id] = await fsReadText(`notes/${t.id}.html`); } catch (e) {} }
-    }
-    try {
-      const imgDir = await rootHandle.getDirectoryHandle('images', { create: false });
-      for await (const [name, h] of imgDir.entries()) {
-        if (h.kind === 'file') { try { bundle.images[name] = bytesToBase64(await fsReadBytes(`images/${name}`)); } catch (e) {} }
-      }
-    } catch (e) { /* images 폴더 없음 */ }
+    const bundle = await buildBundle();
     const d = new Date();
     const stamp = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}`;
     downloadBlob(new Blob([JSON.stringify(bundle)], { type: 'application/json' }), `메모백업_${stamp}.json`);
     toast('백업 파일을 저장했습니다');
-  } catch (e) {
-    toast('백업에 실패했습니다', true);
-  }
+  } catch (e) { toast('백업에 실패했습니다', true); }
 }
 
-// 백업 파일(단일)에서 복원 — 저장소 미연결이면 브라우저 저장(OPFS)에 연결 후 씀
-async function importBackup(file) {
-  let bundle;
-  try { bundle = JSON.parse(await file.text()); } catch (e) { toast('백업 파일을 읽을 수 없습니다', true); return; }
-  if (!bundle || !bundle.index || !Array.isArray(bundle.index.todos)) { toast('올바른 백업 파일이 아닙니다', true); return; }
+// ② 텍스트로 내보내기 — 파일 대화상자가 막혀도 되는 경로 (클립보드/직접 복사)
+async function copyBackupText() {
+  if (!connected) { toast('먼저 저장소를 연결하세요', true); return; }
+  try {
+    const json = JSON.stringify(await buildBundle());
+    const ta = $('bkText'); if (ta) { ta.value = json; ta.focus(); ta.select(); }
+    let copied = false;
+    try { await navigator.clipboard.writeText(json); copied = true; } catch (e) {
+      try { copied = document.execCommand('copy'); } catch (e2) {}
+    }
+    toast(copied ? '백업 텍스트를 복사했습니다 — 안전한 곳(메모장 등)에 붙여넣어 보관하세요'
+                 : '아래 텍스트를 전체 선택해 복사해 보관하세요');
+  } catch (e) { toast('백업 텍스트 생성에 실패했습니다', true); }
+}
+
+// 번들 객체로 복원 (파일/텍스트 공용)
+function restoreFromBundle(bundle) {
+  if (!bundle || !bundle.index || !Array.isArray(bundle.index.todos)) { toast('올바른 백업 데이터가 아닙니다', true); return; }
   const doRestore = async () => {
     if (!connected) { if (!(await connectOPFS())) return; }
     try {
@@ -672,6 +689,21 @@ async function importBackup(file) {
   if (connected && data.todos.length) {
     confirmBox(`백업(${cnt}개)으로 현재 내용을 덮어씁니다. 계속할까요?`, doRestore, '복원');
   } else { doRestore(); }
+}
+
+// 파일에서 복원 (단일 파일 선택)
+async function importBackup(file) {
+  let bundle;
+  try { bundle = JSON.parse(await file.text()); } catch (e) { toast('백업 파일을 읽을 수 없습니다', true); return; }
+  restoreFromBundle(bundle);
+}
+// 텍스트(붙여넣기)에서 복원 — 파일 대화상자 없이
+function pasteRestore() {
+  const txt = ($('bkText') && $('bkText').value || '').trim();
+  if (!txt) { toast('복원할 백업 텍스트를 붙여넣어 주세요', true); return; }
+  let bundle;
+  try { bundle = JSON.parse(txt); } catch (e) { toast('붙여넣은 텍스트가 올바른 백업이 아닙니다', true); return; }
+  restoreFromBundle(bundle);
 }
 
 /* ---- OPFS(브라우저 전용 파일시스템) 모드 — 대화상자·드래그 없이 연결 ---- */
@@ -3269,10 +3301,19 @@ function bindEvents() {
   $('btnFile').addEventListener('click', () => { if (usingOPFS) return; if (FS_API) pickFolder(); });
   $('gateBtn').addEventListener('click', pickFolder);
 
-  // 브라우저 저장(OPFS) 연결 + 백업 내보내기/가져오기
+  // 브라우저 저장(OPFS) 연결
   $('gateOpfs').addEventListener('click', connectOPFS);
-  $('btnBackup').addEventListener('click', exportBackup);
-  $('gateImport').addEventListener('click', () => $('importFile').click());
+
+  // 백업/복원 모달
+  const openBackupModal = () => { $('bkText').value = ''; $('backupModal').hidden = false; };
+  $('btnBackup').addEventListener('click', openBackupModal);
+  $('gateImport').addEventListener('click', openBackupModal);
+  $('bkClose').addEventListener('click', () => { $('backupModal').hidden = true; });
+  $('backupModal').addEventListener('click', e => { if (e.target === $('backupModal')) $('backupModal').hidden = true; });
+  $('bkExportFile').addEventListener('click', exportBackup);
+  $('bkImportFile').addEventListener('click', () => $('importFile').click());
+  $('bkCopy').addEventListener('click', copyBackupText);
+  $('bkPasteRestore').addEventListener('click', pasteRestore);
   $('importFile').addEventListener('change', e => {
     const f = e.target.files && e.target.files[0];
     if (f) importBackup(f);
