@@ -558,16 +558,49 @@ async function rebindNoteImages() {
   }
 }
 
-async function pickFolder() {
+// 얻은 디렉터리 핸들로 연결 (선택/드롭 공용). 쓰기 권한 확보 후 로드.
+async function connectDirHandle(h) {
+  if (!h || h.kind !== 'directory') { toast('폴더가 아닙니다', true); return; }
   try {
-    const h = await window.showDirectoryPicker({ mode: 'readwrite' });
+    if (typeof h.requestPermission === 'function') {
+      const p = await h.requestPermission({ mode: 'readwrite' });
+      if (p !== 'granted') { toast('폴더 쓰기 권한이 필요합니다', true); return; }
+    }
     rootHandle = h;
     try { await idbSet('dirHandle', h); } catch (e) { /* 무시 */ }
     await loadFromFolder();
     toast(`폴더 연결됨: ${h.name}`);
   } catch (e) {
-    if (e && e.name === 'AbortError') return;
     toast('폴더 연결에 실패했습니다', true);
+  }
+}
+
+async function pickFolder() {
+  try {
+    const h = await window.showDirectoryPicker({ mode: 'readwrite' });
+    await connectDirHandle(h);
+  } catch (e) {
+    if (e && e.name === 'AbortError') return;
+    // 보안 프로그램이 폴더 선택 대화상자를 막는 경우 안내
+    toast('폴더 선택이 막혔다면, 폴더를 창으로 끌어다 놓아 보세요', true);
+  }
+}
+
+// 폴더를 창으로 끌어다 놓기 → 디렉터리 핸들 획득 (파일 대화상자를 안 거쳐 DLP 우회)
+async function handleFolderDrop(e) {
+  e.preventDefault();
+  const items = e.dataTransfer && e.dataTransfer.items;
+  if (!items || !items.length) return;
+  const it = items[0];
+  if (typeof it.getAsFileSystemHandle !== 'function') {
+    toast('이 브라우저는 폴더 끌어놓기를 지원하지 않습니다 (Chrome/Edge 권장)', true); return;
+  }
+  try {
+    const h = await it.getAsFileSystemHandle();
+    if (!h || h.kind !== 'directory') { toast('파일이 아니라 폴더를 끌어다 놓아 주세요', true); return; }
+    await connectDirHandle(h);
+  } catch (err) {
+    toast('폴더를 여는 데 실패했습니다', true);
   }
 }
 
@@ -614,22 +647,26 @@ function updateFolderUI() {
 function showGate(mode) {
   const g = $('folderGate');
   if (!g) return;
-  const msg = $('gateMsg'), btn = $('gateBtn');
+  const msg = $('gateMsg'), btn = $('gateBtn'), alt = $('gateAlt');
   if (mode === 'unsupported') {
     msg.textContent = '이 브라우저는 폴더 저장을 지원하지 않습니다. Chrome 또는 Edge로 열어 주세요.';
     btn.hidden = true;
+    if (alt) alt.hidden = true;
   } else if (mode === 'reconnect') {
     msg.textContent = '메모 폴더 접근을 허용해 주세요.';
     btn.textContent = '폴더 다시 연결';
     btn.hidden = false;
+    if (alt) alt.hidden = true; // 재연결은 대화상자 없이 권한만 재요청
   } else if (mode === 'corrupt') {
     msg.textContent = 'index.json 파일을 읽을 수 없습니다(손상 가능성).\n덮어쓰지 않았습니다. 폴더를 확인하거나 백업으로 복구한 뒤 다시 연결하세요.';
     btn.textContent = '다른 폴더 선택';
     btn.hidden = false;
+    if (alt) alt.hidden = false;
   } else {
     msg.textContent = '메모를 저장할 폴더를 선택하세요.\n선택한 폴더 안에 index.json·notes·images로 저장됩니다.';
     btn.textContent = '폴더 선택';
     btn.hidden = false;
+    if (alt) alt.hidden = false;
   }
   g.hidden = false;
 }
@@ -3132,6 +3169,24 @@ function bindEvents() {
   // 폴더 연결/변경
   $('btnFile').addEventListener('click', () => { if (FS_API) pickFolder(); });
   $('gateBtn').addEventListener('click', pickFolder);
+
+  // 게이트에 폴더 끌어다 놓기 (보안 프로그램이 폴더 선택 대화상자를 막는 환경 우회)
+  const gate = $('folderGate');
+  if (gate) {
+    gate.addEventListener('dragover', e => {
+      if (gate.hidden) return;
+      e.preventDefault();
+      if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
+      $('gateDrop').classList.add('drag-over');
+    });
+    gate.addEventListener('dragleave', e => {
+      if (!gate.contains(e.relatedTarget)) $('gateDrop').classList.remove('drag-over');
+    });
+    gate.addEventListener('drop', e => {
+      $('gateDrop').classList.remove('drag-over');
+      if (!gate.hidden) handleFolderDrop(e);
+    });
+  }
 
   // 링크 모달
   document.querySelectorAll('input[name=linkMode]').forEach(r =>

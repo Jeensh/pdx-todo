@@ -42,11 +42,14 @@
 
 <!-- 첫 실행: 폴더 선택 게이트 -->
 <div class="folder-gate" id="folderGate" hidden>
-  <div class="gate-card">
+  <div class="gate-card" id="gateDrop">
     <div class="gate-logo">📁</div>
     <h2 class="gate-title">메모 폴더 연결</h2>
     <p class="gate-msg" id="gateMsg"></p>
     <button id="gateBtn" class="gate-btn" type="button">폴더 선택</button>
+    <p class="gate-alt" id="gateAlt">또는 폴더를 이 창으로 <b>끌어다 놓기</b><br>
+      <span class="gate-alt-hint">보안 프로그램(Waterwall 등)이 폴더 선택을 막으면 이 방법을 쓰세요</span>
+    </p>
   </div>
 </div>
 
