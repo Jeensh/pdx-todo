@@ -30,7 +30,9 @@
   <div class="top-actions">
     <span id="saveState" class="save-state"></span>
     <button id="btnSave" class="top-btn" type="button" title="지금 저장 (Ctrl+S)">저장</button>
+    <button id="btnBackup" class="top-btn" type="button" title="백업 파일로 내보내기" hidden>백업</button>
     <button id="btnFile" class="top-btn" type="button" hidden>폴더 연결</button>
+    <input id="importFile" type="file" accept="application/json,.json" hidden>
   </div>
 </header>
 
@@ -47,9 +49,11 @@
     <h2 class="gate-title">메모 폴더 연결</h2>
     <p class="gate-msg" id="gateMsg"></p>
     <button id="gateBtn" class="gate-btn" type="button">폴더 선택</button>
-    <p class="gate-alt" id="gateAlt">또는 폴더를 이 창으로 <b>끌어다 놓기</b><br>
-      <span class="gate-alt-hint">보안 프로그램(Waterwall 등)이 폴더 선택을 막으면 이 방법을 쓰세요</span>
-    </p>
+    <p class="gate-alt" id="gateAlt">또는 폴더를 이 창으로 <b>끌어다 놓기</b></p>
+    <div class="gate-sep" id="gateSep"><span>폴더 선택이 막히나요?</span></div>
+    <button id="gateOpfs" class="gate-btn2" type="button">💾 이 브라우저에 저장</button>
+    <p class="gate-alt-hint" id="gateOpfsHint">보안 프로그램(Waterwall 등)으로 폴더 선택·드래그가 막힐 때. 빠르고, 데이터는 이 PC에 저장됩니다(정기 <b>백업</b> 권장).</p>
+    <button id="gateImport" class="gate-link" type="button">백업 파일에서 복원</button>
   </div>
 </div>
 

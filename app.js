@@ -604,7 +604,100 @@ async function handleFolderDrop(e) {
   }
 }
 
+/* ---- 백업 내보내기 / 가져오기 (단일 파일 = 보안 프로그램도 대개 허용) ---- */
+function bytesToBase64(bytes) {
+  let bin = '';
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+  return btoa(bin);
+}
+function base64ToBytes(b64) {
+  const bin = atob(b64);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+function downloadBlob(blob, name) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1500);
+}
+
+// 전체를 단일 JSON으로 묶어 백업 파일 저장(다운로드)
+async function exportBackup() {
+  if (!connected) { toast('먼저 저장소를 연결하세요', true); return; }
+  flushPendingEdits();
+  try {
+    await writeIndexNow();
+    const bundle = { app: 'pdx-todo', version: 1, index: buildIndex(), notes: {}, images: {} };
+    for (const t of data.todos) {
+      if (t.hasNote) { try { bundle.notes[t.id] = await fsReadText(`notes/${t.id}.html`); } catch (e) {} }
+    }
+    try {
+      const imgDir = await rootHandle.getDirectoryHandle('images', { create: false });
+      for await (const [name, h] of imgDir.entries()) {
+        if (h.kind === 'file') { try { bundle.images[name] = bytesToBase64(await fsReadBytes(`images/${name}`)); } catch (e) {} }
+      }
+    } catch (e) { /* images 폴더 없음 */ }
+    const d = new Date();
+    const stamp = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}`;
+    downloadBlob(new Blob([JSON.stringify(bundle)], { type: 'application/json' }), `메모백업_${stamp}.json`);
+    toast('백업 파일을 저장했습니다');
+  } catch (e) {
+    toast('백업에 실패했습니다', true);
+  }
+}
+
+// 백업 파일(단일)에서 복원 — 저장소 미연결이면 브라우저 저장(OPFS)에 연결 후 씀
+async function importBackup(file) {
+  let bundle;
+  try { bundle = JSON.parse(await file.text()); } catch (e) { toast('백업 파일을 읽을 수 없습니다', true); return; }
+  if (!bundle || !bundle.index || !Array.isArray(bundle.index.todos)) { toast('올바른 백업 파일이 아닙니다', true); return; }
+  const doRestore = async () => {
+    if (!connected) { if (!(await connectOPFS())) return; }
+    try {
+      data = indexToData(bundle.index);
+      await writeIndexNow();
+      for (const id in (bundle.notes || {})) { try { await fsWrite(`notes/${id}.html`, bundle.notes[id]); } catch (e) {} }
+      for (const name in (bundle.images || {})) { try { await fsWrite(`images/${name}`, new Blob([base64ToBytes(bundle.images[name])])); } catch (e) {} }
+      revokeAllImageUrls(); imgUrlCache.clear(); dataUrlRef.clear(); searchCache.clear();
+      selectedId = null;
+      updateFolderUI(); hideGate(); renderAll(); prewarmBodyCache();
+      toast('백업을 복원했습니다');
+    } catch (e) { toast('복원에 실패했습니다', true); }
+  };
+  const cnt = bundle.index.todos.length;
+  if (connected && data.todos.length) {
+    confirmBox(`백업(${cnt}개)으로 현재 내용을 덮어씁니다. 계속할까요?`, doRestore, '복원');
+  } else { doRestore(); }
+}
+
+/* ---- OPFS(브라우저 전용 파일시스템) 모드 — 대화상자·드래그 없이 연결 ---- */
+let usingOPFS = false;
+function opfsAvailable() { return !!(navigator.storage && navigator.storage.getDirectory); }
+async function connectOPFS() {
+  if (!opfsAvailable()) { toast('이 브라우저는 브라우저 저장을 지원하지 않습니다', true); return false; }
+  try {
+    usingOPFS = true;
+    rootHandle = await navigator.storage.getDirectory();
+    try { localStorage.setItem('storageMode', 'opfs'); } catch (e) {}
+    try { if (navigator.storage.persist) await navigator.storage.persist(); } catch (e) {}
+    await loadFromFolder();
+    return true;
+  } catch (e) {
+    usingOPFS = false;
+    toast('브라우저 저장 연결에 실패했습니다', true);
+    return false;
+  }
+}
+
 async function initStorage() {
+  // 폴더 선택/드래그가 막힌 환경: 이전에 브라우저 저장(OPFS)을 골랐으면 대화상자 없이 바로 연결
+  if (localStorage.getItem('storageMode') === 'opfs' && opfsAvailable()) {
+    if (await connectOPFS()) return;
+  }
   if (!FS_API) { showGate('unsupported'); return; }
   try { rootHandle = (await idbGet('dirHandle')) || null; } catch (e) { rootHandle = null; }
   if (rootHandle && typeof rootHandle.queryPermission === 'function') {
@@ -637,10 +730,12 @@ function armReconnect() {
 
 function updateFolderUI() {
   const btn = $('btnFile');
-  if (!btn) return;
-  btn.hidden = false;
-  btn.textContent = connected && rootHandle ? `📁 ${rootHandle.name}` : '폴더 연결';
-  btn.classList.toggle('on', connected);
+  if (btn) {
+    btn.hidden = false;
+    btn.textContent = usingOPFS ? '💾 브라우저 저장' : (connected && rootHandle ? `📁 ${rootHandle.name}` : '폴더 연결');
+    btn.classList.toggle('on', connected);
+  }
+  const bak = $('btnBackup'); if (bak) bak.hidden = !connected; // 백업 버튼은 연결됐을 때만
 }
 
 /* ---- 첫 실행 게이트 ---- */
@@ -648,15 +743,19 @@ function showGate(mode) {
   const g = $('folderGate');
   if (!g) return;
   const msg = $('gateMsg'), btn = $('gateBtn'), alt = $('gateAlt');
+  const opfsEls = ['gateSep', 'gateOpfs', 'gateOpfsHint', 'gateImport'];
+  const showOpfs = mode !== 'reconnect' && opfsAvailable(); // 재연결 중엔 모드 전환 숨김
+  opfsEls.forEach(id => { const el = $(id); if (el) el.hidden = !showOpfs; });
   if (mode === 'unsupported') {
-    msg.textContent = '이 브라우저는 폴더 저장을 지원하지 않습니다. Chrome 또는 Edge로 열어 주세요.';
-    btn.hidden = true;
+    msg.textContent = FS_API ? '' : '폴더 저장은 Chrome 또는 Edge에서 지원됩니다.';
+    btn.hidden = FS_API === false ? true : false;
     if (alt) alt.hidden = true;
+    if (!FS_API && !opfsAvailable()) msg.textContent = '이 브라우저는 지원되지 않습니다. Chrome 또는 Edge로 열어 주세요.';
   } else if (mode === 'reconnect') {
     msg.textContent = '메모 폴더 접근을 허용해 주세요.';
     btn.textContent = '폴더 다시 연결';
     btn.hidden = false;
-    if (alt) alt.hidden = true; // 재연결은 대화상자 없이 권한만 재요청
+    if (alt) alt.hidden = true;
   } else if (mode === 'corrupt') {
     msg.textContent = 'index.json 파일을 읽을 수 없습니다(손상 가능성).\n덮어쓰지 않았습니다. 폴더를 확인하거나 백업으로 복구한 뒤 다시 연결하세요.';
     btn.textContent = '다른 폴더 선택';
@@ -3167,8 +3266,18 @@ function bindEvents() {
   });
 
   // 폴더 연결/변경
-  $('btnFile').addEventListener('click', () => { if (FS_API) pickFolder(); });
+  $('btnFile').addEventListener('click', () => { if (usingOPFS) return; if (FS_API) pickFolder(); });
   $('gateBtn').addEventListener('click', pickFolder);
+
+  // 브라우저 저장(OPFS) 연결 + 백업 내보내기/가져오기
+  $('gateOpfs').addEventListener('click', connectOPFS);
+  $('btnBackup').addEventListener('click', exportBackup);
+  $('gateImport').addEventListener('click', () => $('importFile').click());
+  $('importFile').addEventListener('change', e => {
+    const f = e.target.files && e.target.files[0];
+    if (f) importBackup(f);
+    e.target.value = '';
+  });
 
   // 게이트에 폴더 끌어다 놓기 (보안 프로그램이 폴더 선택 대화상자를 막는 환경 우회)
   const gate = $('folderGate');

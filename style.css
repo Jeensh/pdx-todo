@@ -47,9 +47,32 @@
   border: 2px dashed var(--accent);
   background: var(--accent-soft);
 }
-.gate-alt { font-size: 13px; color: var(--ink-2); line-height: 1.6; margin-top: 18px; }
+.gate-alt { font-size: 13px; color: var(--ink-2); line-height: 1.6; margin-top: 14px; }
 .gate-alt b { color: var(--accent); }
-.gate-alt-hint { font-size: 11.5px; color: var(--ink-3); }
+.gate-alt-hint { font-size: 11.5px; color: var(--ink-3); line-height: 1.55; margin-top: 8px; }
+.gate-alt-hint b { color: var(--warn); }
+.gate-sep {
+  display: flex; align-items: center; gap: 10px;
+  margin: 20px 0 14px; color: var(--ink-3); font-size: 11.5px;
+}
+.gate-sep::before, .gate-sep::after { content: ''; flex: 1; height: 1px; background: var(--line); }
+.gate-btn2 {
+  background: var(--panel);
+  color: var(--ink);
+  border: 1px solid var(--line-2);
+  border-radius: 10px;
+  padding: 10px 22px;
+  font-size: 14px; font-weight: 700; font-family: inherit;
+  cursor: pointer;
+}
+.gate-btn2:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+.gate-link {
+  display: inline-block; margin-top: 14px;
+  background: none; border: 0; cursor: pointer;
+  color: var(--ink-3); font-size: 12.5px; font-family: inherit;
+  text-decoration: underline;
+}
+.gate-link:hover { color: var(--accent); }
 .gate-logo { font-size: 44px; }
 .gate-title { font-size: 20px; font-weight: 800; margin-top: 10px; }
 .gate-msg { font-size: 14px; color: var(--ink-2); line-height: 1.6; margin-top: 10px; white-space: pre-line; }
