@@ -697,6 +697,22 @@ async function importBackup(file) {
   try { bundle = JSON.parse(await file.text()); } catch (e) { toast('백업 파일을 읽을 수 없습니다', true); return; }
   restoreFromBundle(bundle);
 }
+// 저장 사용량 표시 (용량 안내)
+async function showStorageUsage() {
+  const el = $('bkUsage'); if (!el) return;
+  el.textContent = '';
+  try {
+    if (navigator.storage && navigator.storage.estimate) {
+      const est = await navigator.storage.estimate();
+      const mb = n => (n / 1024 / 1024);
+      const used = mb(est.usage || 0), quota = mb(est.quota || 0);
+      const persisted = (navigator.storage.persisted ? await navigator.storage.persisted() : false);
+      el.textContent = `사용 중 약 ${used.toFixed(1)}MB` + (quota ? ` / 한도 약 ${(quota / 1024).toFixed(1)}GB` : '')
+        + (persisted ? ' · 영구 저장 켜짐' : '');
+    }
+  } catch (e) { /* 무시 */ }
+}
+
 // 텍스트(붙여넣기)에서 복원 — 파일 대화상자 없이
 function pasteRestore() {
   const txt = ($('bkText') && $('bkText').value || '').trim();
@@ -2116,11 +2132,21 @@ function copyCurrentLink() { return copyLinkFor(selectedId); }
 
 /* ---------- 이미지 ---------- */
 
-const IMG_MAX = 1200;       // 최대 변 (px)
-const IMG_DIRECT = 300 * 1024; // 이 크기 이하면 변환 없이 그대로 내장
-// GIF/WebP 등은 캔버스 변환 시 애니메이션·투명도가 깨지므로 원본 그대로 내장
+const IMG_MAX = 1600;       // 최대 변 (px) — WebP라 커도 용량 작음, 글자 선명하게
+const IMG_DIRECT = 200 * 1024; // 이 크기 이하면 변환 없이 그대로 내장
+// GIF/WebP/SVG는 캔버스 변환 시 애니메이션·투명도·벡터가 깨지므로 원본 그대로 내장
 const KEEP_ORIGINAL = /^image\/(gif|webp|svg\+xml)$/i;
-const IMG_HARD_MAX = 6 * 1024 * 1024;
+const IMG_HARD_MAX = 12 * 1024 * 1024;
+
+// WebP 인코딩 지원 여부 (Chrome/Edge는 지원 — 캡처 PNG를 WebP로 크게 압축)
+let _webpOk = null;
+function webpSupported() {
+  if (_webpOk === null) {
+    try { const c = document.createElement('canvas'); c.width = c.height = 1; _webpOk = c.toDataURL('image/webp').indexOf('data:image/webp') === 0; }
+    catch (e) { _webpOk = false; }
+  }
+  return _webpOk;
+}
 
 function insertImageFile(file) {
   if (!file || !file.type.startsWith('image/')) return;
@@ -2140,9 +2166,12 @@ function insertImageFile(file) {
     const c = document.createElement('canvas');
     c.width = Math.round(img.width * scale);
     c.height = Math.round(img.height * scale);
-    c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
-    const isPng = file.type === 'image/png';
-    const dataUrl = isPng ? c.toDataURL('image/png') : c.toDataURL('image/jpeg', 0.85);
+    const ctx = c.getContext('2d');
+    // PNG 투명 배경이 검게 되지 않도록 WebP/JPEG 변환 전 흰 배경 (스크린샷은 대개 불투명)
+    if (!webpSupported() && file.type === 'image/png') { ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height); }
+    ctx.drawImage(img, 0, 0, c.width, c.height);
+    // 캡처(PNG 포함)를 WebP로 크게 압축 (미지원 브라우저만 JPEG)
+    const dataUrl = webpSupported() ? c.toDataURL('image/webp', 0.85) : c.toDataURL('image/jpeg', 0.85);
     URL.revokeObjectURL(url);
     insertImageData(dataUrl);
   };
@@ -3305,7 +3334,11 @@ function bindEvents() {
   $('gateOpfs').addEventListener('click', connectOPFS);
 
   // 백업/복원 모달
-  const openBackupModal = () => { $('bkText').value = ''; $('backupModal').hidden = false; };
+  const openBackupModal = () => {
+    $('bkText').value = '';
+    $('backupModal').hidden = false;
+    showStorageUsage();
+  };
   $('btnBackup').addEventListener('click', openBackupModal);
   $('gateImport').addEventListener('click', openBackupModal);
   $('bkClose').addEventListener('click', () => { $('backupModal').hidden = true; });
