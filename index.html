@@ -241,6 +241,14 @@
       <button id="bkExportFile" class="btn primary" type="button">⬇ 파일로 백업</button>
       <button id="bkImportFile" class="btn ghost" type="button">⬆ 파일에서 복원</button>
     </div>
+    <div class="gate-sep"><span>자동 백업 (파일 1회 지정 → 이후 자동)</span></div>
+    <p id="autoBkStatus" class="bk-auto-status"></p>
+    <div class="bk-row">
+      <button id="autoBkLink" class="btn ghost" type="button">🔄 자동 백업 파일 지정</button>
+      <button id="autoBkResume" class="btn ghost" type="button" hidden>자동 백업 재개</button>
+      <button id="autoBkUnlink" class="btn ghost" type="button" hidden>해제</button>
+    </div>
+
     <div class="gate-sep"><span>파일 선택이 막히면 (텍스트로)</span></div>
     <textarea id="bkText" class="bk-text" placeholder="여기에 백업 텍스트가 나타납니다. 복원하려면 보관해 둔 백업 텍스트를 여기에 붙여넣으세요."></textarea>
     <div class="bk-row">

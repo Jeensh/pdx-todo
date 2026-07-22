@@ -348,7 +348,7 @@ function writeIndexNow() {
   return indexQueue;
 }
 const hhmm = () => new Date().toTimeString().slice(0, 5);
-function saveOk() { setSaveState(`저장됨 ${hhmm()}`, true); dirty = false; if (bc) bc.postMessage('saved'); }
+function saveOk() { setSaveState(`저장됨 ${hhmm()}`, true); dirty = false; backupDirty = true; if (bc) bc.postMessage('saved'); }
 function saveFail(msg) { setSaveState('저장 실패', false, true); if (msg) toast(msg, true); }
 
 // index.json 쓰기 — 메타 변경(제목/그룹/날짜/완료/추가/삭제/순서) 시 호출 (디바운스)
@@ -720,6 +720,98 @@ function pasteRestore() {
   let bundle;
   try { bundle = JSON.parse(txt); } catch (e) { toast('붙여넣은 텍스트가 올바른 백업이 아닙니다', true); return; }
   restoreFromBundle(bundle);
+}
+
+/* ---- 자동 백업 (파일 1회 지정 → 이후 간격마다 대화상자 없이 자동 덮어쓰기) ---- */
+let autoBackupHandle = null;
+let autoBackupTimer = null;
+let lastAutoBackup = 0;
+let backupDirty = false;        // 마지막 백업 이후 변경 있었나
+let backupInProgress = false;
+const AUTO_BACKUP_MS = 3 * 60 * 1000; // 3분마다 (변경 있을 때만)
+
+async function backupPermOK() {
+  if (!autoBackupHandle) return false;
+  if (typeof autoBackupHandle.queryPermission !== 'function') return true;
+  try { return (await autoBackupHandle.queryPermission({ mode: 'readwrite' })) === 'granted'; }
+  catch (e) { return false; }
+}
+async function writeAutoBackup(force) {
+  if (!autoBackupHandle || !connected || backupInProgress) return;
+  if (!force && !backupDirty) return;
+  if (!(await backupPermOK())) { updateAutoBackupUI(); return; } // 권한 필요 → '재개' 버튼으로
+  backupInProgress = true;
+  try {
+    const bundle = await buildBundle();
+    const w = await autoBackupHandle.createWritable();
+    await w.write(new Blob([JSON.stringify(bundle)], { type: 'application/json' }));
+    await w.close();
+    lastAutoBackup = Date.now();
+    backupDirty = false;
+  } catch (e) { /* 다음 주기에 재시도 */ }
+  finally { backupInProgress = false; updateAutoBackupUI(); }
+}
+function startAutoBackupTimer() {
+  if (autoBackupTimer) clearInterval(autoBackupTimer);
+  autoBackupTimer = setInterval(() => writeAutoBackup(false), AUTO_BACKUP_MS);
+}
+function stopAutoBackupTimer() { if (autoBackupTimer) { clearInterval(autoBackupTimer); autoBackupTimer = null; } }
+
+async function linkBackupFile() {
+  if (!connected) { toast('먼저 저장소를 연결하세요', true); return; }
+  if (typeof window.showSaveFilePicker !== 'function') { toast('이 브라우저는 자동 백업 파일 지정을 지원하지 않습니다', true); return; }
+  try {
+    const h = await window.showSaveFilePicker({
+      suggestedName: '메모_자동백업.json',
+      types: [{ description: '메모 백업', accept: { 'application/json': ['.json'] } }],
+    });
+    autoBackupHandle = h;
+    try { await idbSet('backupHandle', h); } catch (e) {}
+    backupDirty = true;
+    await writeAutoBackup(true);
+    startAutoBackupTimer();
+    toast('자동 백업 파일을 연결했습니다 — 이후 자동 저장됩니다');
+  } catch (e) {
+    if (e && e.name === 'AbortError') return;
+    toast('자동 백업 파일 지정이 막혔을 수 있습니다', true);
+  }
+  updateAutoBackupUI();
+}
+async function resumeAutoBackup() {
+  if (!autoBackupHandle) return;
+  try {
+    const p = await autoBackupHandle.requestPermission({ mode: 'readwrite' });
+    if (p === 'granted') { startAutoBackupTimer(); await writeAutoBackup(true); toast('자동 백업을 재개했습니다'); }
+    else toast('자동 백업 권한이 필요합니다', true);
+  } catch (e) {}
+  updateAutoBackupUI();
+}
+async function unlinkBackupFile() {
+  stopAutoBackupTimer();
+  autoBackupHandle = null;
+  try { await idbSet('backupHandle', null); } catch (e) {}
+  updateAutoBackupUI();
+  toast('자동 백업을 해제했습니다');
+}
+async function armAutoBackup() {
+  try { autoBackupHandle = (await idbGet('backupHandle')) || null; } catch (e) { autoBackupHandle = null; }
+  if (!autoBackupHandle) return;
+  if (await backupPermOK()) startAutoBackupTimer(); // 권한 살아있으면 바로 시작, 아니면 '재개' 필요
+  updateAutoBackupUI();
+}
+async function updateAutoBackupUI() {
+  const st = $('autoBkStatus'); if (!st) return;
+  const link = $('autoBkLink'), resume = $('autoBkResume'), unlink = $('autoBkUnlink');
+  if (!autoBackupHandle) {
+    st.textContent = '꺼짐 — 백업 파일을 한 번 지정하면 이후 자동으로 저장됩니다';
+    link.hidden = false; resume.hidden = true; unlink.hidden = true; return;
+  }
+  const name = autoBackupHandle.name || '백업 파일';
+  const granted = await backupPermOK();
+  const last = lastAutoBackup ? new Date(lastAutoBackup) : null;
+  const lastTxt = last ? ` · 마지막 ${pad(last.getHours())}:${pad(last.getMinutes())}` : '';
+  st.textContent = granted ? `켜짐: ${name}${lastTxt}` : `일시중지: ${name} — [재개]를 눌러 주세요`;
+  link.hidden = true; resume.hidden = granted; unlink.hidden = false;
 }
 
 /* ---- OPFS(브라우저 전용 파일시스템) 모드 — 대화상자·드래그 없이 연결 ---- */
@@ -3338,6 +3430,7 @@ function bindEvents() {
     $('bkText').value = '';
     $('backupModal').hidden = false;
     showStorageUsage();
+    updateAutoBackupUI();
   };
   $('btnBackup').addEventListener('click', openBackupModal);
   $('gateImport').addEventListener('click', openBackupModal);
@@ -3347,6 +3440,9 @@ function bindEvents() {
   $('bkImportFile').addEventListener('click', () => $('importFile').click());
   $('bkCopy').addEventListener('click', copyBackupText);
   $('bkPasteRestore').addEventListener('click', pasteRestore);
+  $('autoBkLink').addEventListener('click', linkBackupFile);
+  $('autoBkResume').addEventListener('click', resumeAutoBackup);
+  $('autoBkUnlink').addEventListener('click', unlinkBackupFile);
   $('importFile').addEventListener('change', e => {
     const f = e.target.files && e.target.files[0];
     if (f) importBackup(f);
@@ -3405,7 +3501,7 @@ function bindEvents() {
 
   // 창이 숨겨질 때(전환·닫기 직전) 미저장 내용 저장 — 백그라운드 전환은 페이지가 살아있어 완료됨
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'hidden') flushPendingEdits();
+    if (document.visibilityState === 'hidden') { flushPendingEdits(); writeAutoBackup(false); }
   });
   // 창을 닫을 때: 저장(비동기)을 시작하되, 아직 미저장분이 있으면 경고 대화상자로 완료 시간 확보
   window.addEventListener('beforeunload', e => {
@@ -3438,6 +3534,7 @@ async function init() {
   loadNavCollapsed();   // 섹션 접힘 상태 적용 (기본: 상태별 분류 접힘)
   renderAll();          // 빈 화면(게이트가 위에 덮음)
   await initStorage();  // 폴더 연결/로드 (게이트 처리 포함)
+  armAutoBackup();      // 지정된 자동 백업 파일이 있으면 재개
 
   try {
     if (navigator.storage && navigator.storage.persist) navigator.storage.persist();
