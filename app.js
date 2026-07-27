@@ -1995,6 +1995,26 @@ function applyMarkdownHeading() {
   return true;
 }
 
+// 줄 맨 앞 '---'(하이픈 3개)만 있는 줄 → 구분선(<hr>)으로. (마크다운식)
+function applyMarkdownRule() {
+  const sel = window.getSelection();
+  if (!sel.rangeCount || !sel.isCollapsed) return false;
+  const range = sel.getRangeAt(0);
+  const node = range.startContainer;
+  if (node.nodeType !== 3) return false;
+  if (node.textContent.slice(0, range.startOffset) !== '---') return false; // 캐럿 앞이 정확히 '---' 뿐
+  for (let p = node.previousSibling; p; p = p.previousSibling) {
+    if ((p.textContent || '').length) return false;      // 줄(블록) 맨 앞이어야 함
+  }
+  if (node.parentNode && node.parentNode.closest && node.parentNode.closest('pre, table')) return false; // 코드블록·표 안 제외
+  // '---' 텍스트를 지우고 그 자리에 <hr> + 새 문단
+  node.textContent = node.textContent.slice(range.startOffset);
+  const r = document.createRange(); r.setStart(node, 0); r.collapse(true);
+  sel.removeAllRanges(); sel.addRange(r);
+  document.execCommand('insertHTML', false, '<hr><p><br></p>');
+  return true;
+}
+
 // 줄 맨 앞 백틱 3개(```) 뒤에 Enter → 그 줄을 코드블록(<pre>)으로. (마크다운식)
 function applyCodeFence() {
   const sel = window.getSelection();
@@ -3299,6 +3319,10 @@ function bindEvents() {
     }
     // 줄 앞 #~### + 스페이스 → 헤딩
     if (e.key === ' ' && !e.isComposing && !composing && applyMarkdownHeading()) {
+      e.preventDefault(); saveNote(); return;
+    }
+    // 줄 앞 '---' + 스페이스/엔터 → 구분선(<hr>)
+    if ((e.key === ' ' || e.key === 'Enter') && !e.isComposing && !composing && !e.shiftKey && applyMarkdownRule()) {
       e.preventDefault(); saveNote(); return;
     }
     // 줄 앞 ``` + Enter → 코드블록 / 코드블록 안 Enter 처리
