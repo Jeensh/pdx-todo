@@ -305,7 +305,7 @@ function buildIndex() {
     groups: data.groups,
     todos: data.todos.map(t => ({
       id: t.id, title: t.title, groupId: t.groupId, date: t.date,
-      done: t.done, created: t.created, updated: t.updated, hasNote: !!t.hasNote,
+      done: t.done, completedAt: t.completedAt || undefined, created: t.created, updated: t.updated, hasNote: !!t.hasNote,
       kind: ['note', 'meeting', 'vacation'].includes(t.kind) ? t.kind : undefined,
       time: (t.kind === 'meeting' && t.time) ? t.time : undefined,  // 회의 시간 HH:MM
       pins: (t.pins && t.pins.length) ? t.pins : undefined,   // 상단 고정 범위들
@@ -324,6 +324,7 @@ function indexToData(idx) {
       if (!t || typeof t.id !== 'string' || typeof t.title !== 'string') continue;
       todos.push({
         id: t.id, title: t.title.slice(0, 300), done: !!t.done,
+        completedAt: validDateKey(t.completedAt) ? t.completedAt : undefined,
         groupId: gids.has(t.groupId) ? t.groupId : null,
         date: validDateKey(t.date) ? t.date : null,
         created: typeof t.created === 'string' ? t.created : new Date().toISOString(),
@@ -942,10 +943,18 @@ function itemsForView(v) {
     ? all.filter(t => isTodo(t) && !t.done && t.date !== null && t.date < overdueBefore)
     : [];
   // 각 기간 뷰의 완료함은 그 기간으로만 한정 (오늘=오늘, 주=이번 주, 달=이번 달)
+  // 완료 목록은 "완료한 날"(completedAt) 기준. 지난주 등록→오늘 완료면 이번주/오늘 완료에 뜨게.
+  // (과거 데이터: completedAt 없으면 수정일 날짜로 폴백)
+  const doneKeyOf = t => t.completedAt || (typeof t.updated === 'string' ? t.updated.slice(0, 10) : null);
+  let donePeriod = null;
+  if (v.type === 'today') donePeriod = k => k === tk;
+  else if (v.type === 'date') donePeriod = k => k === v.date;
+  else if (v.type === 'week') { const a = mondayKeyOf(anchor), b = shiftDate(a, 6); donePeriod = k => !!k && k >= a && k <= b; }
+  else if (v.type === 'month') { const pre = monthKeyOf(anchor) + '-'; donePeriod = k => !!k && k.startsWith(pre); }
   let done;
   if (v.type === 'incomplete') done = [];                       // 미완료 뷰: 완료 항목 숨김
-  else if (v.type === 'today') done = all.filter(t => isTodo(t) && t.done && t.date === tk);
-  else done = all.filter(t => isTodo(t) && t.done && match(t)); // week/month는 match가 이미 기간 한정
+  else if (donePeriod) done = all.filter(t => isTodo(t) && t.done && donePeriod(doneKeyOf(t)));
+  else done = all.filter(t => isTodo(t) && t.done && match(t)); // all/done 뷰: 전체 완료
   return { active, done, overdue };
 }
 
@@ -2655,6 +2664,7 @@ function toggleDone(id) {
   const t = data.todos.find(x => x.id === id);
   if (!t || !isTodo(t)) return; // 자료·회의·휴가는 완료 개념 없음
   t.done = !t.done;
+  t.completedAt = t.done ? todayKey() : null; // 완료한 날 기록 (완료 목록 기준)
   t.updated = new Date().toISOString();
   persist();
   renderAll();
@@ -3156,6 +3166,7 @@ function bindEvents() {
     const t = data.todos.find(x => x.id === selectedId);
     if (!t) return;
     t.done = $('edDone').checked;
+    if (isTodo(t)) t.completedAt = t.done ? todayKey() : null;
     t.updated = new Date().toISOString();
     persist();
     renderSidebar();
