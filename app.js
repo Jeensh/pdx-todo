@@ -2076,6 +2076,41 @@ function handleEnterInPre() {
   return true;
 }
 
+// 코드블록 밖으로 나가는 문단 확보 (없으면 만들고) 캐럿 이동. dir: 'after' | 'before'
+function escapePre(pre, dir) {
+  let target = dir === 'after' ? pre.nextElementSibling : pre.previousElementSibling;
+  const isBlock = el => el && /^(P|DIV|H1|H2|H3|UL|OL|HR|TABLE|PRE|BLOCKQUOTE)$/.test(el.tagName);
+  if (!isBlock(target)) {
+    target = document.createElement('p');
+    target.appendChild(document.createElement('br'));
+    if (dir === 'after') pre.after(target); else pre.before(target);
+  }
+  const sel = window.getSelection();
+  const r = document.createRange();
+  r.selectNodeContents(target);
+  r.collapse(dir === 'after');          // 뒤 문단이면 시작, 앞 문단이면 끝
+  sel.removeAllRanges(); sel.addRange(r);
+}
+
+// 코드블록 안에서 ↓/↑ 로 밖으로 탈출 (IME·빈줄 판정과 무관하게 항상 동작)
+function handleArrowInPre(key) {
+  const sel = window.getSelection();
+  if (!sel.rangeCount || !sel.isCollapsed) return false;
+  const range = sel.getRangeAt(0);
+  const el = range.startContainer.nodeType === 1 ? range.startContainer : range.startContainer.parentNode;
+  const pre = el && el.closest ? el.closest('pre') : null;
+  if (!pre || !$('edNote').contains(pre)) return false;
+  if (key === 'ArrowDown') {
+    // 캐럿 뒤(같은 pre 안)에 개행이 없으면 = 마지막 줄 → 아래로 탈출
+    const aR = document.createRange(); aR.selectNodeContents(pre); aR.setStart(range.endContainer, range.endOffset);
+    if (aR.toString().indexOf('\n') === -1) { escapePre(pre, 'after'); return true; }
+  } else if (key === 'ArrowUp') {
+    const bR = document.createRange(); bR.selectNodeContents(pre); bR.setEnd(range.startContainer, range.startOffset);
+    if (bR.toString().indexOf('\n') === -1) { escapePre(pre, 'before'); return true; }
+  }
+  return false;
+}
+
 // Shift+Tab: 캐럿 앞 들여쓰기 한 단위(탭 또는 공백/nbsp) 제거
 function outdentAtCaret() {
   const sel = window.getSelection();
@@ -3335,6 +3370,17 @@ function bindEvents() {
     // 줄 앞 '---' + 스페이스/엔터 → 구분선(<hr>)
     if ((e.key === ' ' || e.key === 'Enter') && !e.isComposing && !composing && !e.shiftKey && applyMarkdownRule()) {
       e.preventDefault(); saveNote(); return;
+    }
+    // 코드블록 안에서 ↓/↑ 로 밖으로 탈출 (IME 무관, 마지막/첫 줄에서만)
+    if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && !e.shiftKey && !e.altKey && handleArrowInPre(e.key)) {
+      e.preventDefault(); return;
+    }
+    // Shift+Enter: 코드블록 밖으로 즉시 탈출 (확실한 탈출용)
+    if (e.key === 'Enter' && e.shiftKey && !e.isComposing && !composing) {
+      const s = window.getSelection();
+      const el = s.rangeCount ? (s.anchorNode.nodeType === 1 ? s.anchorNode : s.anchorNode.parentNode) : null;
+      const pre = el && el.closest ? el.closest('pre') : null;
+      if (pre && $('edNote').contains(pre)) { e.preventDefault(); escapePre(pre, 'after'); saveNote(); return; }
     }
     // 줄 앞 ``` + Enter → 코드블록 / 코드블록 안 Enter 처리
     if (e.key === 'Enter' && !e.isComposing && !composing && !e.shiftKey) {
