@@ -2481,7 +2481,8 @@ function insertCellAt(table, r, c) {
 }
 
 function tableOp(op) {
-  // 병합은 드래그 선택으로 동작 (캐럿이 없어도 됨)
+  // 복사·병합은 드래그 선택으로 동작 (캐럿이 없어도 됨)
+  if (op === 'copy') { copyTableSelection(); return; }
   if (op === 'merge') { mergeSelection(); clearCellSel(); hideTableBar(); saveNote(); return; }
   // 나머지는 현재 셀(캐럿) 또는 선택 앵커 기준
   const cell = currentCell() || cellSel[0] || null;
@@ -2587,6 +2588,66 @@ function gridBox(table, cells) {
     r1 = Math.max(r1, p.r + p.rs - 1); c1 = Math.max(c1, p.c + p.cs - 1);
   }
   return { r0, r1, c0, c1 };
+}
+
+/* ---- 표 복사 (엑셀 붙여넣기용: text/html <table> + text/plain TSV) ---- */
+// 셀 텍스트 (br·줄바꿈 → \n, nbsp → space)
+function cellText(cell) {
+  const clone = cell.cloneNode(true);
+  clone.querySelectorAll('br').forEach(b => b.replaceWith('\n'));
+  return clone.textContent.replace(/ /g, ' ').replace(/\n{2,}/g, '\n').trim();
+}
+// TSV 셀 이스케이프 (탭·개행·따옴표 있으면 큰따옴표로 감쌈 — 엑셀 규칙)
+function escTsv(s) {
+  if (/[\t\n"]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
+  return s;
+}
+// 표의 직사각 영역(box)을 엑셀 친화 html + tsv 로. 병합(colspan/rowspan)은 영역 경계로 클램프.
+function tableRegionClipboard(table, box) {
+  const grid = buildGrid(table);
+  const htmlDone = new Set(), tsvDone = new Set();
+  let html = '<table border="1" style="border-collapse:collapse">';
+  const tsvRows = [];
+  for (let r = box.r0; r <= box.r1; r++) {
+    html += '<tr>';
+    const tsvCells = [];
+    for (let c = box.c0; c <= box.c1; c++) {
+      const cell = grid[r] && grid[r][c];
+      if (!cell) { html += '<td></td>'; tsvCells.push(''); continue; }
+      if (!htmlDone.has(cell)) {                 // 이 셀의 영역 내 첫 슬롯에서만 <td> 출력
+        htmlDone.add(cell);
+        const p = cellPos(table, cell);
+        const cs = Math.min(p.c + p.cs - 1, box.c1) - c + 1;
+        const rs = Math.min(p.r + p.rs - 1, box.r1) - r + 1;
+        const span = (cs > 1 ? ` colspan="${cs}"` : '') + (rs > 1 ? ` rowspan="${rs}"` : '');
+        const inner = escapeText(cellText(cell)).replace(/\n/g, '<br>');
+        html += `<td${span} style="border:1px solid #ccc;padding:2px 6px">${inner}</td>`;
+      }
+      if (!tsvDone.has(cell)) { tsvDone.add(cell); tsvCells.push(escTsv(cellText(cell))); }
+      else tsvCells.push('');                    // 병합으로 이어진 칸은 빈칸
+    }
+    html += '</tr>';
+    tsvRows.push(tsvCells.join('\t'));
+  }
+  html += '</table>';
+  return { html, tsv: tsvRows.join('\r\n') };
+}
+// 선택 영역(없으면 표 전체) 복사
+function copyTableSelection() {
+  let table, box;
+  if (cellSel.length) {
+    table = cellSel[0].closest('table');
+    if (!table) return;
+    box = gridBox(table, cellSel);
+  } else {
+    const cell = currentCell();
+    if (!cell) { toast('표 안에서 사용하세요', true); return; }
+    table = cell.closest('table');
+    const g = buildGrid(table);
+    box = { r0: 0, c0: 0, r1: g.length - 1, c1: gridCols(g) - 1 };
+  }
+  const { html, tsv } = tableRegionClipboard(table, box);
+  copyRich(html, tsv).then(ok => toast(ok ? '표 복사됨 — 엑셀에 붙여넣기하세요' : '복사하지 못했어요', !ok));
 }
 
 function setRectSel(anchor, cur) {
@@ -3274,6 +3335,17 @@ function bindEvents() {
     saveNote();
   });
   note.addEventListener('blur', () => { if (dirty) flushPendingEdits(); });
+
+  // 셀 드래그로 선택한 상태에서 Ctrl+C → 엑셀용 표(html) + 탭구분(tsv) 클립보드
+  note.addEventListener('copy', e => {
+    if (!cellSel.length) return;                 // 일반 텍스트 복사는 기본 동작
+    const table = cellSel[0].closest('table');
+    if (!table) return;
+    const { html, tsv } = tableRegionClipboard(table, gridBox(table, cellSel));
+    e.clipboardData.setData('text/html', html);
+    e.clipboardData.setData('text/plain', tsv);
+    e.preventDefault();
+  });
 
   note.addEventListener('paste', e => {
     imgTargetId = selectedId;
